@@ -1,0 +1,12 @@
+[project]
+name = "wfm-demod"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "black>=25.1.0",
+    "matplotlib>=3.10.3",
+    "pyqt6>=6.9.1",
+    "scipy>=1.16.0",
+]
