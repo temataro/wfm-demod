@@ -6,6 +6,7 @@ import scipy.integrate
 import numpy.typing as npt
 import matplotlib.pyplot as plt
 
+from scipy.io.wavfile import write
 
 plt.style.use("./computermodern.mplstyle")
 
@@ -13,6 +14,7 @@ DBG_PLT: bool = False
 # constants
 fs: float = 1.92e6  # samplerate, Hz
 dt: float = 1 / fs
+wfm_bandwidth: float = 100e3
 
 TAU: float = np.pi * 2
 
@@ -130,6 +132,7 @@ def demod_fm(sig: npt.NDArray) -> npt.NDArray:
     return angle_diff_lpf
 
 
+<<<<<<< HEAD
 def view_filter(b: npt.NDArray, a: npt.NDArray) -> None:
     w, h = sp.signal.freqs(b, a)
     plt.semilogx(w, 20 * np.log10(abs(h)))
@@ -171,6 +174,29 @@ def center_transmission(sig: npt.NDArray, fc: float) -> npt.NDArray:
 
     return fm_filt
 
+||||||| parent of 2d646791ff53 (Demoulate real FM IQ data offline)
+=======
+def view_filter(b: npt.NDArray, a: npt.NDArray) -> None:
+    w, h = sp.signal.freqs(b, a)
+    plt.semilogx(w, 20 * np.log10(abs(h)))
+    plt.title('Butterworth filter frequency response')
+    plt.xlabel('Frequency [rad/s]')
+    plt.ylabel('Amplitude [dB]')
+    plt.margins(0, 0.1)
+    plt.grid(which='both', axis='both')
+    plt.axvline(100, color='green') # cutoff frequency
+    plt.show()
+
+
+def save_to_wav(audio: npt.NDArray) -> None:
+    # Ensure that highest value is in 16-bit range
+    demod_fs: int = int(fs)  # or maybe 48 KHz, try both
+    audio = audio * (2**15 - 1) / np.max(np.abs(audio))
+    audio = audio.astype(np.int16)
+
+    write("output.wav", demod_fs, audio)
+
+>>>>>>> 2d646791ff53 (Demoulate real FM IQ data offline)
 def main() -> None:
     t: npt.NDArray = np.arange(0, 100_000, dtype=np.float32) * dt
     freq = 1 * np.sin(500 * t)
