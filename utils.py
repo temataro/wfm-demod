@@ -11,10 +11,55 @@ plt.style.use("./computermodern.mplstyle")
 
 DBG_PLT: bool = False
 # constants
-fs: float = 2e6  # samplerate, Hz
+fs: float = 1.92e6  # samplerate, Hz
 dt: float = 1 / fs
 
 TAU: float = np.pi * 2
+
+
+def read_iq(
+    filename: str, samples_to_read: int | float = -1 / 2, offset=0, fs=fs
+) -> npt.NDArray:
+    """
+    Read data from a recorded sc16 or cf32 binary file.
+    Accepts offsets (in bytes) to see where to start the file from.
+    Next offset should be count * bytes per count after the current read.
+    """
+
+    with open(filename, "rb") as file:
+        samples_IQ: int = int(2 * samples_to_read)
+
+        if ".sc16" in filename or ".cs16" in filename:
+            sig: npt.NDArray = np.fromfile(
+                file, dtype=np.int16, count=samples_IQ, offset=offset
+            )
+            ftype: str = "sc16"
+            sig = sig.reshape(sig.size // 2, 2)
+            # Convert to floats
+            sig = sig.astype(np.float32)
+
+            # remove dc offset
+            sig[:, 0] -= np.mean(sig[:, 0])
+            sig[:, 1] -= np.mean(sig[:, 1])
+            sig = sig[:, 0] + 1j * sig[:, 1]
+
+        else:
+            sig = np.fromfile(file, dtype=np.complex64, count=samples_IQ, offset=offset)
+            # remove dc offset
+            sig.real -= np.mean(sig.real)
+            sig.imag -= np.mean(sig.imag)
+            ftype = "cf32"
+
+
+        sig /= np.linalg.norm(sig)
+
+    print(
+        f"[STATUS]\
+    {ftype} file of size {sig.size} read from binary {filename}.\
+    ({sig.size / fs:.2f} seconds at {fs/1e6:.2f} MHz samp rate.)"
+    )
+
+    return sig
 
 
 def gen_fm(
@@ -85,6 +130,47 @@ def demod_fm(sig: npt.NDArray) -> npt.NDArray:
     return angle_diff_lpf
 
 
+def view_filter(b: npt.NDArray, a: npt.NDArray) -> None:
+    w, h = sp.signal.freqs(b, a)
+    plt.semilogx(w, 20 * np.log10(abs(h)))
+    plt.title("Butterworth filter frequency response")
+    plt.xlabel("Frequency [rad/s]")
+    plt.ylabel("Amplitude [dB]")
+    plt.margins(0, 0.1)
+    plt.grid(which="both", axis="both")
+    plt.axvline(100, color="green")  # cutoff frequency
+    plt.show()
+
+
+def save_to_wav(audio: npt.NDArray, outfile: str) -> None:
+    # Ensure that highest value is in 16-bit range
+    demod_fs: int = int(fs)
+    audio = audio * (2**15 - 1) / np.max(np.abs(audio))
+    audio = audio.astype(np.int16)
+
+    write(outfile, demod_fs, audio)
+
+
+def center_transmission(sig: npt.NDArray, fc: float) -> npt.NDArray:
+    """Center and filter a signal so the transmission desired shows up at 0 Hz offset."""
+
+    t: npt.NDArray = np.arange(0, sig.size, dtype=np.float32) * dt
+    sig *= np.exp(1j*TAU*fc*t)
+    filt_ord: int = 5
+    b, a = sp.signal.butter(
+        N=filt_ord, Wn=wfm_bandwidth, btype="low", analog=False, output="ba", fs=fs
+    )
+    # view_filter(b, a)
+    fm_filt = sp.signal.filtfilt(b, a, sig)
+
+    if DBG_PLT:
+        fig, axs = plt.subplots(nrows=2)
+        axs[0].specgram(sig, cmap="turbo")
+        axs[1].specgram(fm_filt, cmap="turbo")
+        plt.show()
+
+    return fm_filt
+
 def main() -> None:
     t: npt.NDArray = np.arange(0, 100_000, dtype=np.float32) * dt
     freq = 1 * np.sin(500 * t)
@@ -106,13 +192,21 @@ def main() -> None:
 
     def test_demod(sig):
         demod_fm(sig)
-        # SIG = np.fft.fftshift(np.fft.fft(sig))  # 20 * np.log10(np.abs(np.fft.fftshift(np.fft.fft(sig))))
-        # freq = np.fft.fftfreq(SIG.size, dt)
-        # plt.plot(freq, np.abs(SIG))
-        # plt.show()
 
-    sig = gen_fm(freq=freq)
-    test_demod(sig)
+    fm: npt.NDArray = read_iq("./assets/analog_FM_France.sigmf-data")
+    # plt.specgram(fm, cmap="turbo"); plt.show()
+
+    filt_ord: int = 11
+    b, a = sp.signal.butter(
+        N=filt_ord, Wn=wfm_bandwidth, btype="low", analog=False, output="ba", fs=fs
+    )
+    # view_filter(b, a)
+    fm_filt = sp.signal.filtfilt(b, a, fm)
+    # plt.specgram(fm, cmap="turbo"); plt.show()
+    # plt.specgram(fm_filt, cmap="turbo"); plt.show()
+
+    sig = demod_fm(fm_filt)
+    save_to_wav(sig)
 
 
 if __name__ == "__main__":
