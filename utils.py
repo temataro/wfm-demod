@@ -52,13 +52,12 @@ def read_iq(
             sig.imag -= np.mean(sig.imag)
             ftype = "cf32"
 
-
         sig /= np.linalg.norm(sig)
 
     print(
         f"[STATUS]\
     {ftype} file of size {sig.size} read from binary {filename}.\
-    ({sig.size / fs:.2f} seconds at {fs/1e6:.2f} MHz samp rate.)"
+    \n({sig.size / fs:.2f} seconds at {fs/1e6:.2f} MHz samp rate.)"
     )
 
     return sig
@@ -132,7 +131,6 @@ def demod_fm(sig: npt.NDArray) -> npt.NDArray:
     return angle_diff_lpf
 
 
-<<<<<<< HEAD
 def view_filter(b: npt.NDArray, a: npt.NDArray) -> None:
     w, h = sp.signal.freqs(b, a)
     plt.semilogx(w, 20 * np.log10(abs(h)))
@@ -174,29 +172,6 @@ def center_transmission(sig: npt.NDArray, fc: float) -> npt.NDArray:
 
     return fm_filt
 
-||||||| parent of 2d646791ff53 (Demoulate real FM IQ data offline)
-=======
-def view_filter(b: npt.NDArray, a: npt.NDArray) -> None:
-    w, h = sp.signal.freqs(b, a)
-    plt.semilogx(w, 20 * np.log10(abs(h)))
-    plt.title('Butterworth filter frequency response')
-    plt.xlabel('Frequency [rad/s]')
-    plt.ylabel('Amplitude [dB]')
-    plt.margins(0, 0.1)
-    plt.grid(which='both', axis='both')
-    plt.axvline(100, color='green') # cutoff frequency
-    plt.show()
-
-
-def save_to_wav(audio: npt.NDArray) -> None:
-    # Ensure that highest value is in 16-bit range
-    demod_fs: int = int(fs)  # or maybe 48 KHz, try both
-    audio = audio * (2**15 - 1) / np.max(np.abs(audio))
-    audio = audio.astype(np.int16)
-
-    write("output.wav", demod_fs, audio)
-
->>>>>>> 2d646791ff53 (Demoulate real FM IQ data offline)
 def main() -> None:
     t: npt.NDArray = np.arange(0, 100_000, dtype=np.float32) * dt
     freq = 1 * np.sin(500 * t)
@@ -219,20 +194,16 @@ def main() -> None:
     def test_demod(sig):
         demod_fm(sig)
 
-    fm: npt.NDArray = read_iq("./assets/analog_FM_France.sigmf-data")
-    # plt.specgram(fm, cmap="turbo"); plt.show()
+    infile: str = "./assets/analog_FM_France.sigmf-data"
+    file: str = ".".join(infile.split(".")[:-1])
+    fm: npt.NDArray = read_iq(infile)
 
-    filt_ord: int = 11
-    b, a = sp.signal.butter(
-        N=filt_ord, Wn=wfm_bandwidth, btype="low", analog=False, output="ba", fs=fs
-    )
-    # view_filter(b, a)
-    fm_filt = sp.signal.filtfilt(b, a, fm)
-    # plt.specgram(fm, cmap="turbo"); plt.show()
-    # plt.specgram(fm_filt, cmap="turbo"); plt.show()
+    # fm_filt = center_transmission(fm, fc=-700e3)
+    fc: float = -700e3  # Hz
+    fm_filt: npt.NDArray = center_transmission(fm, fc=fc)
 
     sig = demod_fm(fm_filt)
-    save_to_wav(sig)
+    save_to_wav(sig, file + f"-{fc//1e3}KHz.wav")
 
 
 if __name__ == "__main__":

@@ -11,3 +11,4 @@ wheels/
 
 # Project files
 assets/
+*.wav
