@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import sys
 import numpy as np
 import scipy as sp
 import scipy.integrate
@@ -11,6 +12,9 @@ from scipy.io.wavfile import write
 plt.style.use("./computermodern.mplstyle")
 
 DBG_PLT: bool = False
+if sys.argv[1] == '-dbg':
+    DBG_PLT = True
+
 # constants
 fs: float = 1.92e6  # samplerate, Hz
 dt: float = 1 / fs
@@ -157,7 +161,7 @@ def center_transmission(sig: npt.NDArray, fc: float) -> npt.NDArray:
 
     t: npt.NDArray = np.arange(0, sig.size, dtype=np.float32) * dt
     sig *= np.exp(1j*TAU*fc*t)
-    filt_ord: int = 5
+    filt_ord: int = 3
     b, a = sp.signal.butter(
         N=filt_ord, Wn=wfm_bandwidth, btype="low", analog=False, output="ba", fs=fs
     )
