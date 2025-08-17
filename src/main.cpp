@@ -1,51 +1,114 @@
-#include <array>
-#include <cstdio>
-#include <string>
-#include <complex>
+// Basic sync record script for RTL-SDR
+// github.com/temataro/wfm-demod   2025
 #include <iostream>
-// #include <vector>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <rtl-sdr.h>
 
-typedef std::complex<float> cf32;
-constexpr int N = 0x00010000;  // number of samples in buffer
+#define DEFAULT_FC 106000000 // 106 MHz (Radio Two)
+#define DEFAULT_SR 2400000 // 2.4 MSPS
+#define DEFAULT_GAIN -10 // auto-gain
 
-// === prototype jail ===
-template <std::size_t SIZE>
-void view_array(const std::array<cf32, SIZE> iq);
-std::array<cf32, N> read_iq(const std::string& filename, int *offset);
-//    ==============
-
-template <std::size_t SIZE>
-void view_array(const std::array<cf32, SIZE>& iq)
+int main(int argc, char **argv)
 {
-    for (int i = 0; i < iq.size(); i++)
+    (void)argc;
+    rtlsdr_dev_t *dev = nullptr;
+    int device_index = 0;
+    int r;
+    char *outfile = argv[1];
+
+    if (strcmp(outfile, "") == 0)
     {
-        printf("(%.2f + j%.2f), ", iq[i].real(), iq[i].imag());
+        printf("Input file not provided. Defaulting output to out.iq\n");
     }
+
+    /* --- Check device for lice and ticks */
+    char manufact[256] = {0};
+    char product[256] = {0};
+    char serial[256] = {0};
+    r = rtlsdr_get_device_usb_strings(0, manufact, product, serial);
+
+    printf("\n\n====\nDevice details: %d, \n"
+           "Manufacturer: %s,\n"
+           "Product: %s,\n"
+           "Serial: %s\n====\n",
+           r, manufact, product, serial);
+
+    r = rtlsdr_open(&dev, device_index);
+    if (r < 0)
+    {
+        std::cerr << "Failed to open RTL-SDR device #" << device_index << "\n";
+        return EXIT_FAILURE;
+    }
+    /* --- */
+
+    /* --- Configure device */
+    rtlsdr_set_center_freq(dev, DEFAULT_FC);
+    rtlsdr_set_sample_rate(dev, DEFAULT_SR);
+    rtlsdr_set_tuner_gain_mode(dev, DEFAULT_GAIN == 0 ? 0 : 1);
+    rtlsdr_set_tuner_gain(dev, DEFAULT_GAIN);
+
+    std::cout << "Tuned to " << DEFAULT_FC / 1e6 << " MHz, "
+              << DEFAULT_SR / 1e6 << " MS/s\n";
+    /* --- */
+
+    /* Reset endpoint before we start reading from it (mandatory) */
+    rtlsdr_reset_buffer(dev);
+    printf("Buffer reset successfully!\n");
+
+    /* --- Record to file */
+    size_t buf_num_samples = 1 << 23;
+    size_t BYTES_PER_SAMPLE = sizeof(int8_t) * 2; // I and then Q
+    void *buf = calloc(buf_num_samples, BYTES_PER_SAMPLE);
+    FILE *fp = fopen(outfile, "wb+");
+
+    if (!fp)
+    {
+        printf("[FATAL] Error opening file! Terminating.\n");
+    }
+
+    int num_read = 0;
+    r = rtlsdr_read_sync(dev, buf, buf_num_samples, &num_read);
+    if (r == 0)
+    {
+        printf("Successfully read: %d samples from SDR.\n", num_read);
+    }
+    else
+    {
+        printf("Problem reading [ERR %d]! Goodbye.\n", r);
+    }
+
+    size_t nmemb_written = fwrite(buf, BYTES_PER_SAMPLE, buf_num_samples, fp);
+    if (nmemb_written != buf_num_samples) {printf("[ERROR] Only wrote %zu/%zu samples from buf into file.\n", nmemb_written, buf_num_samples);}
+    else {printf("Successfully wrote %zu samples to file %s.\n", nmemb_written, outfile);}
+    /* --- */
+
+    free(buf);
+    fclose(fp);
+    rtlsdr_close(dev);
+
+    return EXIT_SUCCESS;
 }
 
+//    void *calloc(size_t nmemb, size_t size);
 
-std::array<cf32, N> read_iq(std::string& filename, int *offset)
-{
-    // Read IQ data from a file in 65K chunks.
-    // Offset by N so it can
-    *offset += N;
-    printf("offset updated to %d.\n", *offset);
-    printf("Filename: %s\n", filename.c_str());
-    std::array<cf32, N> iq = {0};
+/* FILE *fopen(const char *restrict pathname, const char *restrict mode); */
+// fopen()
 
-    return iq;
-}
+/*
+ size_t fwrite(const void ptr[restrict .size * .nmemb],
+              size_t size, size_t nmemb,
+              FILE *restrict stream);
+*/
+// fwrite()
 
-int main()
-{
-    int offset = 0;
-    std::string filename = "filename.iq";
-
-    std::array<cf32, N> iq = read_iq(filename, &offset);
-    printf("iq.size: %zuK elements. \n",(size_t) iq.size() / 1000);
-
-    std::array<cf32, N> iq2 = read_iq(filename, &offset);
-    printf("iq2.size: %zuK elements. \n",(size_t) iq2.size() / 1000);
-
-    return 0;
-}
+/*
+ * Read synchronously from RTL-SDR
+ * rtlsdr_read_sync(
+ *     rtlsdr_dev_t *dev,
+ *     void *buf,
+ *     int samples_to_read,
+ *     int *num_samples_read_by_dev,
+ * );
+ */
