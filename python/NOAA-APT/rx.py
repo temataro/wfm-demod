@@ -145,6 +145,8 @@ def make_APT_sync_A():
     period_2t_10x = 53  # samples/2T times 10
     square_start = 2 * period_2t_10x  # also 4T times 10
     period_4t_10x = square_start
+
+    # manual resampling...
     for i in range(7):
         pulse_start = square_start + i * period_4t_10x
         pulse_stop = pulse_start + period_2t_10x
@@ -256,22 +258,31 @@ def main():
 
     assert samp == sr, "Sample rate not expected!"
 
-    # words = demod_hilbert(sig)
-    sig = sig.astype(np.float64)
-    words = demod_abs(sig)
-    # *** Image pre-histogram normalization! ***
-    num_lines = words.size // 2080 + 1
-    img = np.zeros(num_lines * 2080)
-    img[:words.size] = words.flatten()
-    img = img.reshape((2080, num_lines))
-    print(img.shape)
-    plt.imshow(img, cmap="Greys", interpolation="none")
+    # Check for sync word
+    sync_A = make_APT_sync_A()
+    sig = resample_to_4160(sig)
+    corr = sp.correlate(sig, sync_A)
+    # plt.plot(corr); plt.show()
+    plt.plot(sig)
+    # plt.plot(sync_A)
     plt.show()
+    # --- demodulation ---
+    #   # words = demod_hilbert(sig)
+    #   sig = sig.astype(np.float64)
+    #   words = demod_abs(sig)
+    #   # *** Image pre-histogram normalization! ***
+    #   num_lines = words.size // 2080 + 1
+    #   img = np.zeros(num_lines * 2080)
+    #   img[:words.size] = words.flatten()
+    #   img = img.reshape((2080, num_lines))
+    #   print(img.shape)
+    #   plt.imshow(img, cmap="Greys", interpolation="none")
+    #   plt.show()
 
-    # Histogram normalization
-    eq_image = hist_norm(img)
-    plt.imshow(eq_image, cmap="Greys", interpolation="none")
-    plt.show()
+    #   # Histogram normalization
+    #   eq_image = hist_norm(img)
+    #   plt.imshow(eq_image, cmap="Greys", interpolation="none")
+    #   plt.show()
 
 
 if __name__ == "__main__":
