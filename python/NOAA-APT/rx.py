@@ -3,7 +3,7 @@
 """
 Demodulate WFM flavored APT signals from NOAA weather satellites
 and __nothing__ more!
-https://sourceforge.isae.fr/projects/weather-images-of-noaa-satellites/wiki/Apt_
+https://sourceforge.isae.fr/projects/weather-imgs-of-noaa-satellites/wiki/Apt_
 
 NOAA signals are analog video transmission following the APT modulation scheme.
     - 2 channels of data: one for visible, one for IR.
@@ -11,8 +11,8 @@ NOAA signals are analog video transmission following the APT modulation scheme.
     - AM center frequency = 2.4kHz
     - 120 lines/minute -> 30 seconds/line
     - 2080 'bits' per line
-        - 909 channel A image pixels           --- total = 909
-        - 909 channel B image pixels           --- total = 1818
+        - 909 channel A img pixels           --- total = 909
+        - 909 channel B img pixels           --- total = 1818
         - 47 'bits' for ch A space data markers -- total = 1865
         - 47 'bits' for ch B space data markers -- total = 1912
         - 39 'bits' for ch A sync               -- total = 1951
@@ -38,6 +38,7 @@ Plan of action.
 
 """
 
+import sys
 import numpy as np
 import scipy.signal as sp
 import matplotlib.pyplot as plt
@@ -52,6 +53,19 @@ LPF_ORDER = 9
 f_3dB = 4_000  # Hz
 BITS_PER_T = 11025 / 4160
 SYNC_SEQ_LEN = 40
+
+#  +---------------------------------------------------------------------+
+#  | Use VERBOSITY to display logging info/plots to different yap levels |
+#  |   0 -- production level, only errors, no debugging                  |
+#  |   1 -- current debugs                                               |
+#  |   2 -- basic status and warnings                                    |
+#  |   3 -- np array shapes and whatnot                                  |
+#  |   4 -- plots for intermediate results                               |
+#  +---------------------------------------------------------------------+
+if len(sys.argv) > 1:
+    VERBOSITY = int(sys.argv[1])
+else:
+    VERBOSITY = 2
 
 
 def demod_lpf(sig):
@@ -145,19 +159,27 @@ def make_APT_sync_A():
     period_2t_10x = 53  # samples/2T times 10
     square_start = 2 * period_2t_10x  # also 4T times 10
     period_4t_10x = square_start
-
-    # manual resampling...
     for i in range(7):
         pulse_start = square_start + i * period_4t_10x
         pulse_stop = pulse_start + period_2t_10x
         sync_sig[pulse_start:pulse_stop] += 244
 
-    # plt.plot(sync_sig)
-    # plt.show()
-    decimated_sync_sig = sync_sig[5::10][: int(SYNC_SEQ_LEN * BITS_PER_T)]
-    # print(decimated_sync_sig.size)
-    # plt.plot(decimated_sync_sig)
-    # plt.show()
+    decimated_sync_sig = sync_sig[5::10][
+        : int(SYNC_SEQ_LEN * BITS_PER_T)
+    ]  # resample_to_4160(sync_sig)
+    if VERBOSITY == 3:
+        plt.plot(sync_sig)
+        plt.show()
+        print(decimated_sync_sig.size)
+        plt.plot(decimated_sync_sig)
+        plt.show()
+
+    # decimate the sync to 4.160 KHz like the main sig before returning
+    # decimated_sync_sig = np.array([0, 0, 255, 255, 0, 0, 255, 255,
+    #                  0, 0, 255, 255, 0, 0, 255, 255,
+    #                  0, 0, 255, 255, 0, 0, 255, 255,
+    #                  0, 0, 255, 255, 0, 0, 0, 0, 0,
+    #                  0, 0, 0]) - 128
     return decimated_sync_sig
 
 
@@ -177,7 +199,10 @@ def demod_abs(sig):
     digitized_sig = np.abs(sig)
     digitized_sig = digitized_sig.astype(np.float64)
     digitized_sig /= np.max(digitized_sig)
-    plt.plot(255 * digitized_sig); plt.show()
+
+    if VERBOSITY == 3:
+        plt.plot(255 * digitized_sig)
+        plt.show()
 
     return (255 * digitized_sig).astype(np.uint8)
 
@@ -189,30 +214,40 @@ def demod_hilbert(sig):
     (Set the -ve frequencies to zero in the real FFT of the signal and iFFT.)
     """
 
-    sig = resample_to_4160(sig)
-
     SIG = np.fft.fft(sig)
     SIG[: SIG.size // 2] = 0.0
 
     sig_iq = np.fft.ifft(SIG)
 
+    def swap_iq(sig):
+        # hypothesis: Swapping IQ pairs would give a nicer img (according to
+        # other implementations I've seen online.)
+        # (a + jb)* = (a - jb)
+        # (a - jb) * j = (b + ja)
+        return j * sig_iq.conj()
+
     sig_demod = np.abs(sig_iq)
 
     # Normalize to 256
-    sig_demod /= np.max(sig_demod)
-    sig_demod *= 256
+    # sig_demod /= np.max(sig_demod)
+    # sig_demod *= 256
+    low, high = np.percentile(sig_demod, (5, 95))
+    norm_demod = np.round((255 * (sig_demod - low)) / (high - low)).clip(0, 255)
 
-    # fig, axs = plt.subplots(nrows=2)
-    # axs[0].plot(sig_iq[:100].real, '-')
-    # axs[0].plot(sig_iq[:100].imag, '--')
-    # axs[1].plot(sig_demod[:10000], '-.')
-    # plt.show()
+    digitized_sig = norm_demod.astype(np.uint8)
 
-    digitized_sig = sig_demod.astype(np.uint8)
-    # print(digitized_sig[:1000])
-    # plt.stem(digitized_sig[:1000])
-    # plt.show()
+    if VERBOSITY == 1:
+        fig, axs = plt.subplots(nrows=2)
+        axs[0].plot(sig_iq[:100].real, "-")
+        axs[0].plot(sig_iq[:100].imag, "--")
+        axs[1].plot(sig_demod[:10000], "-.")
+        plt.show()
 
+        print(digitized_sig[:1000])
+        plt.stem(digitized_sig[:1000])
+        plt.show()
+
+    digitized_sig = resample_to_4160(digitized_sig)
     return digitized_sig
 
 
@@ -234,23 +269,86 @@ def hist_norm(img):
     cdf_x = [cdf(i) for i in range(256)]
     LUT = list(map(round, cdf_x * 255))
     # when you give an input value, you get the value that corresponds
-    # to a normalized histogram mapping of the original image.
+    # to a normalized histogram mapping of the original img.
 
-    # Here's a comparison between the un-equalized and equalized images.
+    # Here's a comparison between the un-equalized and equalized imgs.
     img_eq = np.array([LUT[int(img[i])] for i in range(N)])
     pdf_eq = np.histogram(img_eq)[0] / N
     cdf_y = [np.sum(pdf_eq[:i]) for i in range(256)]
 
-    fig, axs = plt.subplots(nrows=2)
-    axs[0].plot(pdf, "--")
-    axs[0].plot(cdf_x, "-")
-    axs[0].set_title("Original Image PDF & CDF")
-    axs[1].plot(pdf_eq, "--")
-    axs[1].plot(cdf_y, "-")
-    axs[1].set_title("Equalized Image PDF & CDF")
-    plt.show()
+    if VERBOSITY == 3:
+        fig, axs = plt.subplots(nrows=2)
+        axs[0].plot(pdf, "--")
+        axs[0].plot(cdf_x, "-")
+        axs[0].set_title("Original img PDF & CDF")
+        axs[1].plot(pdf_eq, "--")
+        axs[1].plot(cdf_y, "-")
+        axs[1].set_title("Equalized img PDF & CDF")
+        plt.show()
 
     return img_eq.reshape(orig_shape)
+
+
+def align_with_sync(img, sync_sig):
+    """
+    Take a picture and realign so the sync signals come at the beginning column.
+    """
+
+
+    def moving_avg_filt(arr, order):
+        kernel = np.ones(order) / order
+        return np.convolve(arr, kernel, mode="valid")
+
+    corr = np.zeros_like(img)
+    print("CORR", corr.shape)
+    print("SYNC", sync_sig.shape)
+    print("IMG", img.shape)
+    for r, row in enumerate(img):
+        corr[r] = np.abs(
+            np.convolve(row, sync_sig, mode="same")
+        )  # This will be as big as row.size
+
+    # This should show us how horizontally distorted the img is
+    # plt.imshow(corr)
+    # plt.show()
+
+    MAF_ORDER = 2
+    # only show corr peak in each row
+    rolls = np.zeros(corr.shape[0])
+    for r, row in enumerate(corr):
+        idx = np.argmax(row)
+        val = row[idx]
+        corr[r] = np.zeros(row.size)
+        corr[r][idx] = val
+
+        if idx <= 1040:
+            rolls[r] = 1040 - idx
+        else:
+            rolls[r] = 2080 - idx
+
+    # plt.imshow(corr, cmap="turbo", interpolation="none")
+    # plt.show()
+
+    if VERBOSITY == 4:
+        # plt.plot(sync_sig)
+        # plt.show()
+
+        fig, axs = plt.subplots(ncols=2)
+        axs[0].imshow(img, cmap="Greys", interpolation="none")
+
+        # possibly try a moving avg filter on roll indices before...
+        rolls = moving_avg_filt(rolls, MAF_ORDER)
+        for r, roll in enumerate(rolls):
+            if abs(roll) < MAF_ORDER:
+                continue
+            img[r] = np.roll(img[r], roll)
+        axs[1].imshow(img, cmap="Greys", interpolation="none")
+
+        axs[0].set_title("img before sync alignment")
+        axs[1].set_title("img after sync alignment")
+        plt.show()
+
+    return rolls
 
 
 def main():
@@ -258,32 +356,39 @@ def main():
 
     assert samp == sr, "Sample rate not expected!"
 
-    # Check for sync word
+    # words = demod_hilbert(sig)
+    sig = sig.astype(np.float64)
+    words = demod_abs(sig)
+    # *** img pre-histogram normalization! ***
+    num_lines = words.size // 2080 + 1
+    img = np.zeros(num_lines * 2080)
+    img[: words.size] = words.flatten()
+    img = img.reshape((num_lines, 2080))
+    print(img.shape)
+
+    if VERBOSITY == 3:
+        plt.imshow(img, cmap="Greys", interpolation="none")
+        plt.show()
+
     sync_A = make_APT_sync_A()
-    sig = resample_to_4160(sig)
-    corr = sp.correlate(sig, sync_A)
-    # plt.plot(corr); plt.show()
-    plt.plot(sig)
-    # plt.plot(sync_A)
-    plt.show()
-    # --- demodulation ---
-    #   # words = demod_hilbert(sig)
-    #   sig = sig.astype(np.float64)
-    #   words = demod_abs(sig)
-    #   # *** Image pre-histogram normalization! ***
-    #   num_lines = words.size // 2080 + 1
-    #   img = np.zeros(num_lines * 2080)
-    #   img[:words.size] = words.flatten()
-    #   img = img.reshape((2080, num_lines))
-    #   print(img.shape)
-    #   plt.imshow(img, cmap="Greys", interpolation="none")
-    #   plt.show()
+    rolls = align_with_sync(img, sync_A)
 
-    #   # Histogram normalization
-    #   eq_image = hist_norm(img)
-    #   plt.imshow(eq_image, cmap="Greys", interpolation="none")
-    #   plt.show()
+    for r, roll in enumerate(rolls):
+        img[r] = np.roll(img[r], roll)
+    # Histogram normalization
+    # Don't normalize both imgs at the same time!
+    visible_img = img[:, :1040]
+    ir_img = img[:, 1040:]
+    visible_eq_img = hist_norm(visible_img)
+    ir_eq_img = hist_norm(ir_img)
+    eq_img = np.zeros_like(img)
+    eq_img[:, :1040] = visible_eq_img
+    eq_img[:, 1040:] = ir_eq_img
 
+    if VERBOSITY == 3:
+        plt.imshow(eq_img, cmap="Greys", interpolation="none")
+        plt.show()
+    # ---
 
 if __name__ == "__main__":
     main()
