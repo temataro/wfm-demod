@@ -164,7 +164,9 @@ def make_APT_sync_A():
         pulse_stop = pulse_start + period_2t_10x
         sync_sig[pulse_start:pulse_stop] += 244
 
-    decimated_sync_sig = sync_sig[5::10][: int(SYNC_SEQ_LEN * BITS_PER_T)] # resample_to_4160(sync_sig)
+    decimated_sync_sig = sync_sig[5::10][
+        : int(SYNC_SEQ_LEN * BITS_PER_T)
+    ]  # resample_to_4160(sync_sig)
     if VERBOSITY == 3:
         plt.plot(sync_sig)
         plt.show()
@@ -218,7 +220,7 @@ def demod_hilbert(sig):
     sig_iq = np.fft.ifft(SIG)
 
     def swap_iq(sig):
-        # hypothesis: Swapping IQ pairs would give a nicer image (according to
+        # hypothesis: Swapping IQ pairs would give a nicer img (according to
         # other implementations I've seen online.)
         # (a + jb)* = (a - jb)
         # (a - jb) * j = (b + ja)
@@ -254,8 +256,6 @@ def hist_norm(img):
     https://en.wikipedia.org/wiki/Histogram_equalization
     """
 
-    # TODO: Do histogram normalization for the two channels separately!!!
-    # Do the sync alignment beforehand and split the image into two matrices!!!
     orig_shape = img.shape
     img = img.flatten()
     N = img.size
