@@ -14,6 +14,11 @@
 const size_t buf_num_samples = 1 << 23;
 typedef std::complex<float> cf32;
 
+typedef struct{
+    uint64_t sample_counter;
+    FILE* fp;
+} rtl_ctx;
+
 /* Prototype jail */
 int read_buf_to_complex_arr(const int *buf, size_t buf_size,
                             std::array<cf32, buf_num_samples> &arr);
@@ -21,13 +26,13 @@ int read_buf_to_complex_arr(const int *buf, size_t buf_size,
 
 static void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
 {
-    printf("Doing with one read!\n");
-    if (ctx)
-    {
-        fwrite(buf, len, 1, (FILE *)ctx);
-        printf("Done with one read  %d!\n", len);
-    }
+    rtl_ctx *ctx1 = (rtl_ctx*) ctx;
+    ctx1->sample_counter += len / 2; // increment the number of samples read by
+                                     // half the len (bc each char is I or Q)
+    fwrite(buf, len, 1, (FILE*) ctx1->fp);
+    printf("Doing with sample_counter: %lu read!\r", ctx1->sample_counter);
 }
+
 
 int main(int argc, char **argv)
 {
@@ -76,9 +81,12 @@ int main(int argc, char **argv)
     rtlsdr_reset_buffer(dev);
     printf("Buffer reset successfully!\n");
 
-    FILE *fp = fopen("out_async.iq", "wb+");
+    rtl_ctx ctx;
+    FILE* fp = fopen("out_async.iq", "wb+");
+    ctx.fp = fp;
+    ctx.sample_counter = 0;
     // FILE *fopen(const char *restrict pathname, const char *restrict mode);
-    int rc = rtlsdr_read_async(dev, rtlsdr_callback, fp, 0, 1 << 18);
+    int rc = rtlsdr_read_async(dev, rtlsdr_callback, &ctx, 0, 1 << 18);
 
     rtlsdr_close(dev);
     return rc;

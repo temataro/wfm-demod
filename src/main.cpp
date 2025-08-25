@@ -41,13 +41,13 @@
 #define DEFAULT_SR      2'400'000   // 2.4 MSPS
 #define DEFAULT_GAIN    0           // auto-gain
 #define READ_SIZE       0x01 << 18  // 262,144 samples
-// clang-format on
 
 /* Convenience macros */
-#define RED "\033[31m"
-#define GREEN "\033[32m"
-#define BLUE "\033[34m"
-#define RESET "\033[0m"
+#define RED     "\033[31m"
+#define GREEN   "\033[32m"
+#define BLUE    "\033[34m"
+#define RESET   "\033[0m"
+// clang-format off
 
 // Macros for colored fprintf
 #define ERR_PRINT(fmt, ...) \
