@@ -8,7 +8,9 @@
 
 #define DEFAULT_FC 106000000 // 106 MHz (Radio Two)
 #define DEFAULT_SR 2400000 // 2.4 MSPS
-#define DEFAULT_GAIN -10 // auto-gain
+#define DEFAULT_GAIN 0 // auto-gain
+
+void rtl_cb(unsigned char *buf, uint32_t len, void *ctx);
 
 int main(int argc, char **argv)
 {
@@ -38,7 +40,7 @@ int main(int argc, char **argv)
     r = rtlsdr_open(&dev, device_index);
     if (r < 0)
     {
-        std::cerr << "Failed to open RTL-SDR device #" << device_index << "\n";
+        fprintf(stderr, "Failed to open RTL-SDR device #%d\n", device_index);
         return EXIT_FAILURE;
     }
     /* --- */
@@ -49,66 +51,55 @@ int main(int argc, char **argv)
     rtlsdr_set_tuner_gain_mode(dev, DEFAULT_GAIN == 0 ? 0 : 1);
     rtlsdr_set_tuner_gain(dev, DEFAULT_GAIN);
 
-    std::cout << "Tuned to " << DEFAULT_FC / 1e6 << " MHz, "
-              << DEFAULT_SR / 1e6 << " MS/s\n";
+    printf("Tuned to %.2f MHz. Sample rate: %.2f MSps.\n", DEFAULT_FC / 1e6,
+           DEFAULT_SR / 1e6);
     /* --- */
 
     /* Reset endpoint before we start reading from it (mandatory) */
     rtlsdr_reset_buffer(dev);
     printf("Buffer reset successfully!\n");
 
-    /* --- Record to file */
-    size_t buf_num_samples = 1 << 23;
-    size_t BYTES_PER_SAMPLE = sizeof(int8_t) * 2; // I and then Q
-    void *buf = calloc(buf_num_samples, BYTES_PER_SAMPLE);
-    FILE *fp = fopen(outfile, "wb+");
+    /*!
+     * Read samples from the device asynchronously. This function will block
+     *until it is being canceled using rtlsdr_cancel_async()
+     *
+     * \param dev the device handle given by rtlsdr_open()
+     * \param cb callback function to return received samples
+     * \param ctx user specific context to pass via the callback function
+     * \param buf_num optional buffer count, buf_num * buf_len = overall buffer
+     *size set to 0 for default buffer count (15) \param buf_len optional
+     *buffer length, must be multiple of 512, should be a multiple of 16384
+     *(URB size), set to 0 for default buffer length (16 * 32 * 512) \return 0
+     *on success
+     */
+    // RTLSDR_API int rtlsdr_read_async(rtlsdr_dev_t * dev,
+    //                                  rtlsdr_read_async_cb_t cb, void *ctx,
+    //                                  uint32_t buf_num, uint32_t buf_len);
 
+    FILE *fp = fopen("test.iq", "wb+");
     if (!fp)
     {
         printf("[FATAL] Error opening file! Terminating.\n");
     }
 
-    int num_read = 0;
-    r = rtlsdr_read_sync(dev, buf, buf_num_samples, &num_read);
-    if (r == 0)
-    {
-        printf("Successfully read: %d samples from SDR.\n", num_read);
-    }
-    else
-    {
-        printf("Problem reading [ERR %d]! Goodbye.\n", r);
-    }
+    rtlsdr_read_async(dev, rtl_cb, fp, 0, 0x01 << 18);
 
-    size_t nmemb_written = fwrite(buf, BYTES_PER_SAMPLE, buf_num_samples, fp);
-    if (nmemb_written != buf_num_samples) {printf("[ERROR] Only wrote %zu/%zu samples from buf into file.\n", nmemb_written, buf_num_samples);}
-    else {printf("Successfully wrote %zu samples to file %s.\n", nmemb_written, outfile);}
-    /* --- */
-
-    free(buf);
-    fclose(fp);
     rtlsdr_close(dev);
 
     return EXIT_SUCCESS;
 }
 
-//    void *calloc(size_t nmemb, size_t size);
-
-/* FILE *fopen(const char *restrict pathname, const char *restrict mode); */
-// fopen()
-
-/*
- size_t fwrite(const void ptr[restrict .size * .nmemb],
-              size_t size, size_t nmemb,
-              FILE *restrict stream);
-*/
-// fwrite()
-
-/*
- * Read synchronously from RTL-SDR
- * rtlsdr_read_sync(
- *     rtlsdr_dev_t *dev,
- *     void *buf,
- *     int samples_to_read,
- *     int *num_samples_read_by_dev,
- * );
- */
+void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
+{
+    FILE *fp = (FILE *)ctx;
+    size_t samp_written = fwrite(buf, 1, len, fp);
+    if (samp_written < len)
+    {
+        fprintf(stderr, "[ERROR] Expected to write %u samples but only wrote %zu!\n",
+                len, samp_written);
+    }
+    fprintf(stderr, "Wrote %u samples.\r", len);
+    // size_t fwrite(const void ptr[restrict .size * .nmemb],
+    //          size_t size, size_t nmemb,
+    //          FILE *restrict stream);
+}
