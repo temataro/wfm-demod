@@ -5,10 +5,17 @@
 #include <cstdlib>
 #include <cstring>
 #include <rtl-sdr.h>
+#include <time.h>
 
 #define DEFAULT_FC 106000000 // 106 MHz (Radio Two)
 #define DEFAULT_SR 2400000 // 2.4 MSPS
 #define DEFAULT_GAIN 0 // auto-gain
+
+typedef struct
+{
+    uint64_t sample_counter;
+    FILE *fp;
+} sdr_ctx_t;
 
 void rtl_cb(unsigned char *buf, uint32_t len, void *ctx);
 
@@ -76,13 +83,16 @@ int main(int argc, char **argv)
     //                                  rtlsdr_read_async_cb_t cb, void *ctx,
     //                                  uint32_t buf_num, uint32_t buf_len);
 
+    sdr_ctx_t sdr_ctx;
     FILE *fp = fopen("test.iq", "wb+");
     if (!fp)
     {
         printf("[FATAL] Error opening file! Terminating.\n");
     }
+    sdr_ctx.fp = fp;
+    sdr_ctx.sample_counter = 0;
 
-    rtlsdr_read_async(dev, rtl_cb, fp, 0, 0x01 << 18);
+    rtlsdr_read_async(dev, rtl_cb, &sdr_ctx, 0, 0x01 << 18);
 
     rtlsdr_close(dev);
 
@@ -91,14 +101,16 @@ int main(int argc, char **argv)
 
 void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
 {
-    FILE *fp = (FILE *)ctx;
-    size_t samp_written = fwrite(buf, 1, len, fp);
+    sdr_ctx_t *sdr_ctx = (sdr_ctx_t*) ctx;
+    size_t samp_written = fwrite(buf, 1, len, sdr_ctx->fp);
     if (samp_written < len)
     {
-        fprintf(stderr, "[ERROR] Expected to write %u samples but only wrote %zu!\n",
+        fprintf(stderr,
+                "[ERROR] Expected to write %u samples but only wrote %zu!\n",
                 len, samp_written);
     }
-    fprintf(stderr, "Wrote %u samples.\r", len);
+    sdr_ctx->sample_counter += samp_written;
+    fprintf(stderr, "[STATUS] Wrote %lu samples.\r", sdr_ctx->sample_counter);
     // size_t fwrite(const void ptr[restrict .size * .nmemb],
     //          size_t size, size_t nmemb,
     //          FILE *restrict stream);
