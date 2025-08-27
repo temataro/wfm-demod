@@ -1,5 +1,26 @@
-// Basic sync record script for RTL-SDR
+// Basic async record script for RTL-SDR
 // github.com/temataro/wfm-demod   2025
+
+/* Some back of the envelope calculations to drive the architecture of this
+ * program:
+ * At a maximum sample rate of 2.4 MSps, and with the async read capturing
+ * 2 ^ 18 bytes into the buffer...
+ * 2 bytes per sample -> 2 ^ 17 (=131,072) samples per call to rtl_cb()
+ * Each collection would take 2 ^ 17 / 2.4 microseconds (~54,600 us)
+ *
+ * (Hypothesis)
+ * This means we can keep the program realtime as long as the processing we
+ * take on each buffer doesn't last longer than say 50,000 us.
+ *
+ * What sort of analysis are we doing? (TODO)
+ * 1. Converting to cf32 and doing FM demodulation through a phase
+ * discriminator.
+ * (Possibly take a half step to decimate/average to increase SNR)
+ * 2. For NOAA-APT, do a AM demodulation followed by the Hilbert Method of APT
+ * decoding.
+ * 3. Feed a Linux audio device with a constant stream of FM data.
+ */
+
 #include <iostream>
 #include <cstdio>
 #include <cstdlib>
@@ -10,7 +31,7 @@
 #define DEFAULT_FC 106000000 // 106 MHz (Radio Two)
 #define DEFAULT_SR 2400000 // 2.4 MSPS
 #define DEFAULT_GAIN 0 // auto-gain
-#define READ_SIZE 0x01 << 18  // 262,144 samples
+#define READ_SIZE 0x01 << 18 // 262,144 samples
 
 typedef struct
 {
@@ -32,7 +53,8 @@ int main(int argc, char **argv)
 
     if (strcmp(outfile, "") == 0)
     {
-        printf("Input file not provided. Defaulting output to out.iq\n");
+        printf(
+            "[FATAL] Input file not provided. Defaulting output to out.iq\n");
     }
 
     /* --- Check device for lice and ticks */
@@ -41,7 +63,7 @@ int main(int argc, char **argv)
     char serial[256] = {0};
     r = rtlsdr_get_device_usb_strings(0, manufact, product, serial);
 
-    printf("\n\n====\nDevice details: %d, \n"
+    printf("\n\n====\n[INFO] Device details: %d, \n"
            "Manufacturer: %s,\n"
            "Product: %s,\n"
            "Serial: %s\n====\n",
@@ -50,7 +72,8 @@ int main(int argc, char **argv)
     r = rtlsdr_open(&dev, device_index);
     if (r < 0)
     {
-        fprintf(stderr, "Failed to open RTL-SDR device #%d\n", device_index);
+        fprintf(stderr, "[FATAL] Failed to open RTL-SDR device #%d\n",
+                device_index);
         return EXIT_FAILURE;
     }
     /* --- */
@@ -61,30 +84,13 @@ int main(int argc, char **argv)
     rtlsdr_set_tuner_gain_mode(dev, DEFAULT_GAIN == 0 ? 0 : 1);
     rtlsdr_set_tuner_gain(dev, DEFAULT_GAIN);
 
-    printf("Tuned to %.2f MHz. Sample rate: %.2f MSps.\n", DEFAULT_FC / 1e6,
-           DEFAULT_SR / 1e6);
+    printf("[INFO] Tuned to %.2f MHz. Sample rate: %.2f MSps.\n",
+           DEFAULT_FC / 1e6, DEFAULT_SR / 1e6);
     /* --- */
 
     /* Reset endpoint before we start reading from it (mandatory) */
     rtlsdr_reset_buffer(dev);
     printf("Buffer reset successfully!\n");
-
-    /*!
-     * Read samples from the device asynchronously. This function will block
-     *until it is being canceled using rtlsdr_cancel_async()
-     *
-     * \param dev the device handle given by rtlsdr_open()
-     * \param cb callback function to return received samples
-     * \param ctx user specific context to pass via the callback function
-     * \param buf_num optional buffer count, buf_num * buf_len = overall buffer
-     *size set to 0 for default buffer count (15) \param buf_len optional
-     *buffer length, must be multiple of 512, should be a multiple of 16384
-     *(URB size), set to 0 for default buffer length (16 * 32 * 512) \return 0
-     *on success
-     */
-    // RTLSDR_API int rtlsdr_read_async(rtlsdr_dev_t * dev,
-    //                                  rtlsdr_read_async_cb_t cb, void *ctx,
-    //                                  uint32_t buf_num, uint32_t buf_len);
 
     /* Populate sdr_ctx_t */
     sdr_ctx_t sdr_ctx;
@@ -105,7 +111,28 @@ int main(int argc, char **argv)
     sdr_ctx.benchmark_fp = benchmark_fp;
     /* --- */
 
-    rtlsdr_read_async(dev, rtl_cb, &sdr_ctx, 0, READ_SIZE);
+    /*!
+     * Read samples from the device asynchronously. This function will block
+     *until it is being canceled using rtlsdr_cancel_async()
+     *
+     * \param dev the device handle given by rtlsdr_open()
+     * \param cb callback function to return received samples
+     * \param ctx user specific context to pass via the callback function
+     * \param buf_num optional buffer count, buf_num * buf_len = overall buffer
+     *                              size set to 0 for default buffer count (15)
+     * \param buf_len optional buffer length, must be multiple of 512, should
+     * be a multiple of 16384 (URB size), set to 0 for default buffer length
+     * (16 * 32 * 512)
+     * \return 0 on success
+     */
+    // RTLSDR_API int rtlsdr_read_async(rtlsdr_dev_t * dev,
+    //                                  rtlsdr_read_async_cb_t cb, void *ctx,
+    //                                  uint32_t buf_num, uint32_t buf_len);
+
+    rtlsdr_read_async(dev, rtl_cb, &sdr_ctx,
+                      0, // buf_num
+                      READ_SIZE, // buf_len
+    );
 
     rtlsdr_close(dev);
     fclose(sdr_ctx.fp);
@@ -118,6 +145,9 @@ void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
 {
     sdr_ctx_t *sdr_ctx = (sdr_ctx_t *)ctx;
     size_t samp_written = fwrite(buf, 1, len, sdr_ctx->fp);
+    // size_t fwrite(const void ptr[restrict .size * .nmemb],
+    //          size_t size, size_t nmemb,
+    //          FILE *restrict stream);
     if (samp_written < len)
     {
         fprintf(stderr,
@@ -131,12 +161,10 @@ void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
     sdr_ctx->init_time = time;
 
     fprintf(sdr_ctx->benchmark_fp, "%.5f\n", proc_time);
-    fflush(sdr_ctx->benchmark_fp);  // Otherwise we won't see anything printed
-                                    // when we Ctrl-C out of this program on
-                                    // termination.
+    fflush(sdr_ctx->benchmark_fp); // Otherwise we won't see anything printed
+                                   // when we Ctrl-C out of this program on
+                                   // termination.
 
-    fprintf(stderr, "[STATUS] Took %.5f ns to process. Wrote %lu samples.\r", proc_time, sdr_ctx->sample_counter);
-    // size_t fwrite(const void ptr[restrict .size * .nmemb],
-    //          size_t size, size_t nmemb,
-    //          FILE *restrict stream);
+    fprintf(stderr, "[STATUS] Took %.5f ns to process. Wrote %lu samples.\r",
+            proc_time, sdr_ctx->sample_counter);
 }
