@@ -35,10 +35,27 @@
 #include <rtl-sdr.h>
 #include <time.h>
 
-#define DEFAULT_FC 106000000 // 106 MHz (Radio Two)
-#define DEFAULT_SR 2400000 // 2.4 MSPS
+#define DEFAULT_FC 106 '000' 000 // 106 MHz (Radio Two)
+#define DEFAULT_SR 2 '400' 000 // 2.4 MSPS
 #define DEFAULT_GAIN 0 // auto-gain
 #define READ_SIZE 0x01 << 18 // 262,144 samples
+
+/* Convenience macros */
+#define RED "\033[31m"
+#define GREEN "\033[32m"
+#define BLUE "\033[34m"
+#define RESET "\033[0m"
+
+// Macros for colored fprintf
+#define ERR_PRINT(fmt, ...) \
+    fprintf(stderr, RED "[FATAL]" fmt RESET "\n", ##__VA_ARGS__)
+
+#define INFO_PRINT(fmt, ...) \
+    fprintf(stdout, GREEN "[INFO]" fmt RESET "\n", ##__VA_ARGS__)
+
+#define ARR_PRINT(arr) \
+    for (auto &elt : arr) \
+    printf(BLUE "(%2.2f, %2.2f)" RESET "\n", elt.real(), elt.imag())
 
 typedef std::complex<float> cf32;
 
@@ -63,8 +80,7 @@ int main(int argc, char **argv)
 
     if (strcmp(outfile, "") == 0)
     {
-        printf(
-            "[FATAL] Input file not provided. Defaulting output to out.iq\n");
+        ERR_PRINT("Input file not provided. Defaulting output to out.iq");
     }
 
     /* --- Check device for lice and ticks */
@@ -73,17 +89,16 @@ int main(int argc, char **argv)
     char serial[256] = {0};
     r = rtlsdr_get_device_usb_strings(0, manufact, product, serial);
 
-    printf("\n\n====\n[INFO] Device details: %d, \n"
-           "Manufacturer: %s,\n"
-           "Product: %s,\n"
-           "Serial: %s\n====\n",
-           r, manufact, product, serial);
+    INFO_PRINT("\n\n====\nDevice details: %d, \n"
+               "Manufacturer: %s,\n"
+               "Product: %s,\n"
+               "Serial: %s\n====\n",
+               r, manufact, product, serial);
 
     r = rtlsdr_open(&dev, device_index);
     if (r < 0)
     {
-        fprintf(stderr, "[FATAL] Failed to open RTL-SDR device #%d\n",
-                device_index);
+        ERR_PRINT("Failed to open RTL-SDR device #%d", device_index);
         return EXIT_FAILURE;
     }
     /* --- */
@@ -94,20 +109,20 @@ int main(int argc, char **argv)
     rtlsdr_set_tuner_gain_mode(dev, DEFAULT_GAIN == 0 ? 0 : 1);
     rtlsdr_set_tuner_gain(dev, DEFAULT_GAIN);
 
-    printf("[INFO] Tuned to %.2f MHz. Sample rate: %.2f MSps.\n",
-           DEFAULT_FC / 1e6, DEFAULT_SR / 1e6);
+    INFO_PRINT("Tuned to %.2f MHz. Sample rate: %.2f MSps.", DEFAULT_FC / 1e6,
+               DEFAULT_SR / 1e6);
     /* --- */
 
     /* Reset endpoint before we start reading from it (mandatory) */
     rtlsdr_reset_buffer(dev);
-    printf("Buffer reset successfully!\n");
+    INFO_PRINT("Buffer reset successfully!");
 
     /* Populate sdr_ctx_t */
     sdr_ctx_t sdr_ctx;
     FILE *fp = fopen("test.iq", "wb+");
     if (!fp)
     {
-        printf("[FATAL] Error opening file! Terminating.\n");
+        ERR_PRINT("Error opening file! Terminating.");
     }
     sdr_ctx.fp = fp;
     sdr_ctx.sample_counter = 0;
@@ -116,7 +131,7 @@ int main(int argc, char **argv)
     FILE *benchmark_fp = fopen("cb_bench.txt", "w+");
     if (!benchmark_fp)
     {
-        printf("[FATAL] Error opening file! Terminating.\n");
+        ERR_PRINT("Error opening file! Terminating.");
     }
     sdr_ctx.benchmark_fp = benchmark_fp;
     /* --- */
@@ -157,10 +172,11 @@ void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
 
     std::vector<cf32> iq((int)len / 2);
     read_to_vec(buf, len, iq);
-    for (auto &z : iq)
-    {
-        printf("(%2.3f, %2.3f)\n", z.real(), z.imag());
-    }
+    ARR_PRINT(iq);
+    // for (auto &z : iq)
+    // {
+    //     printf("(%2.3f, %2.3f)\n", z.real(), z.imag());
+    // }
 
     size_t samp_written = fwrite(buf, 1, len, sdr_ctx->fp);
     // size_t fwrite(const void ptr[restrict .size * .nmemb],
@@ -169,9 +185,8 @@ void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
 
     if (samp_written < len)
     {
-        fprintf(stderr,
-                "[ERROR] Expected to write %u samples but only wrote %zu!\n",
-                len, samp_written);
+        ERR_PRINT("[ERROR] Expected to write %u samples but only wrote %zu!",
+                  len, samp_written);
     }
     sdr_ctx->sample_counter += samp_written;
 
