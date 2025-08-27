@@ -21,10 +21,17 @@
  * 3. Feed a Linux audio device with a constant stream of FM data.
  */
 
+// More concrete TODOs
+// Decimate function to increase SNR
+// Integrate ggplot graphing IQ data/Constellation diagrams
+
 #include <iostream>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <complex>
+#include <vector>
+#include <algorithm>
 #include <rtl-sdr.h>
 #include <time.h>
 
@@ -32,6 +39,8 @@
 #define DEFAULT_SR 2400000 // 2.4 MSPS
 #define DEFAULT_GAIN 0 // auto-gain
 #define READ_SIZE 0x01 << 18 // 262,144 samples
+
+typedef std::complex<float> cf32;
 
 typedef struct
 {
@@ -42,6 +51,7 @@ typedef struct
 } sdr_ctx_t;
 
 void rtl_cb(unsigned char *buf, uint32_t len, void *ctx);
+void read_to_vec(unsigned char *buf, uint32_t len, std::vector<cf32> &iq);
 
 int main(int argc, char **argv)
 {
@@ -131,7 +141,7 @@ int main(int argc, char **argv)
 
     rtlsdr_read_async(dev, rtl_cb, &sdr_ctx,
                       0, // buf_num
-                      READ_SIZE, // buf_len
+                      READ_SIZE // buf_len
     );
 
     rtlsdr_close(dev);
@@ -144,10 +154,19 @@ int main(int argc, char **argv)
 void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
 {
     sdr_ctx_t *sdr_ctx = (sdr_ctx_t *)ctx;
+
+    std::vector<cf32> iq((int)len / 2);
+    read_to_vec(buf, len, iq);
+    for (auto &z : iq)
+    {
+        printf("(%2.3f, %2.3f)\n", z.real(), z.imag());
+    }
+
     size_t samp_written = fwrite(buf, 1, len, sdr_ctx->fp);
     // size_t fwrite(const void ptr[restrict .size * .nmemb],
     //          size_t size, size_t nmemb,
     //          FILE *restrict stream);
+
     if (samp_written < len)
     {
         fprintf(stderr,
@@ -167,4 +186,28 @@ void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
 
     fprintf(stderr, "[STATUS] Took %.5f ns to process. Wrote %lu samples.\r",
             proc_time, sdr_ctx->sample_counter);
+}
+
+/* DSP Functions */
+void read_to_vec(unsigned char *buf, uint32_t len, std::vector<cf32> &iq)
+{
+    // Take a buffer and convert it to a std::complex vector
+    float i_mean = 0;
+    float q_mean = 0;
+    for (size_t i = 0; i < len / 2; i++)
+    {
+        cf32 z{(float)buf[2 * i], (float)buf[2 * i + 1]};
+        i_mean += z.real();
+        q_mean += z.imag();
+        iq[i] = z;
+    }
+
+    i_mean /= (len / 2);
+    q_mean /= (len / 2);
+
+    // Also do dc offset removal
+    cf32 mean{i_mean, q_mean};
+    std::transform(iq.begin(), iq.end(), iq.begin(),
+                   [mean](auto z) { return z - mean; });
+    /* --- */
 }
