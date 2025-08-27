@@ -14,6 +14,7 @@
 typedef struct
 {
     uint64_t sample_counter;
+    clock_t init_time;
     FILE *fp;
 } sdr_ctx_t;
 
@@ -83,6 +84,7 @@ int main(int argc, char **argv)
     //                                  rtlsdr_read_async_cb_t cb, void *ctx,
     //                                  uint32_t buf_num, uint32_t buf_len);
 
+    /* Populate sdr_ctx_t */
     sdr_ctx_t sdr_ctx;
     FILE *fp = fopen("test.iq", "wb+");
     if (!fp)
@@ -91,6 +93,8 @@ int main(int argc, char **argv)
     }
     sdr_ctx.fp = fp;
     sdr_ctx.sample_counter = 0;
+    sdr_ctx.init_time = clock();
+    /* --- */
 
     rtlsdr_read_async(dev, rtl_cb, &sdr_ctx, 0, 0x01 << 18);
 
@@ -101,7 +105,7 @@ int main(int argc, char **argv)
 
 void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
 {
-    sdr_ctx_t *sdr_ctx = (sdr_ctx_t*) ctx;
+    sdr_ctx_t *sdr_ctx = (sdr_ctx_t *)ctx;
     size_t samp_written = fwrite(buf, 1, len, sdr_ctx->fp);
     if (samp_written < len)
     {
@@ -110,7 +114,12 @@ void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
                 len, samp_written);
     }
     sdr_ctx->sample_counter += samp_written;
-    fprintf(stderr, "[STATUS] Wrote %lu samples.\r", sdr_ctx->sample_counter);
+
+    clock_t time = clock();
+    double proc_time = (time - sdr_ctx->init_time) * 1e9 / CLOCKS_PER_SEC;
+    sdr_ctx->init_time = time;
+
+    fprintf(stderr, "[STATUS] Took %.3f ns to process. Wrote %lu samples.\r", proc_time, sdr_ctx->sample_counter);
     // size_t fwrite(const void ptr[restrict .size * .nmemb],
     //          size_t size, size_t nmemb,
     //          FILE *restrict stream);
