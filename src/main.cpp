@@ -10,12 +10,14 @@
 #define DEFAULT_FC 106000000 // 106 MHz (Radio Two)
 #define DEFAULT_SR 2400000 // 2.4 MSPS
 #define DEFAULT_GAIN 0 // auto-gain
+#define READ_SIZE 0x01 << 18  // 262,144 samples
 
 typedef struct
 {
     uint64_t sample_counter;
     clock_t init_time;
     FILE *fp;
+    FILE *benchmark_fp;
 } sdr_ctx_t;
 
 void rtl_cb(unsigned char *buf, uint32_t len, void *ctx);
@@ -94,11 +96,20 @@ int main(int argc, char **argv)
     sdr_ctx.fp = fp;
     sdr_ctx.sample_counter = 0;
     sdr_ctx.init_time = clock();
+
+    FILE *benchmark_fp = fopen("cb_bench.txt", "w+");
+    if (!benchmark_fp)
+    {
+        printf("[FATAL] Error opening file! Terminating.\n");
+    }
+    sdr_ctx.benchmark_fp = benchmark_fp;
     /* --- */
 
-    rtlsdr_read_async(dev, rtl_cb, &sdr_ctx, 0, 0x01 << 18);
+    rtlsdr_read_async(dev, rtl_cb, &sdr_ctx, 0, READ_SIZE);
 
     rtlsdr_close(dev);
+    fclose(sdr_ctx.fp);
+    fclose(sdr_ctx.benchmark_fp);
 
     return EXIT_SUCCESS;
 }
@@ -119,7 +130,12 @@ void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
     double proc_time = (time - sdr_ctx->init_time) * 1e9 / CLOCKS_PER_SEC;
     sdr_ctx->init_time = time;
 
-    fprintf(stderr, "[STATUS] Took %.3f ns to process. Wrote %lu samples.\r", proc_time, sdr_ctx->sample_counter);
+    fprintf(sdr_ctx->benchmark_fp, "%.5f\n", proc_time);
+    fflush(sdr_ctx->benchmark_fp);  // Otherwise we won't see anything printed
+                                    // when we Ctrl-C out of this program on
+                                    // termination.
+
+    fprintf(stderr, "[STATUS] Took %.5f ns to process. Wrote %lu samples.\r", proc_time, sdr_ctx->sample_counter);
     // size_t fwrite(const void ptr[restrict .size * .nmemb],
     //          size_t size, size_t nmemb,
     //          FILE *restrict stream);
