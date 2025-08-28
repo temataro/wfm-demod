@@ -32,13 +32,16 @@
 #include <complex>
 #include <vector>
 #include <algorithm>
+#include <ranges>
 #include <rtl-sdr.h>
 #include <time.h>
 
-#define DEFAULT_FC 106 '000' 000 // 106 MHz (Radio Two)
-#define DEFAULT_SR 2 '400' 000 // 2.4 MSPS
-#define DEFAULT_GAIN 0 // auto-gain
-#define READ_SIZE 0x01 << 18 // 262,144 samples
+// clang-format off
+#define DEFAULT_FC      106'000'000 // 106 MHz (Radio Two)
+#define DEFAULT_SR      2'400'000   // 2.4 MSPS
+#define DEFAULT_GAIN    0           // auto-gain
+#define READ_SIZE       0x01 << 18  // 262,144 samples
+// clang-format on
 
 /* Convenience macros */
 #define RED "\033[31m"
@@ -53,12 +56,17 @@
 #define INFO_PRINT(fmt, ...) \
     fprintf(stdout, GREEN "[INFO]" fmt RESET "\n", ##__VA_ARGS__)
 
+std::vector<std::string> LINE_BREAKS = {"\t", "\t", "\t", "\t", "\t", "\n"};
+size_t NUM_ELTS_PER_LINE = LINE_BREAKS.size();
+
 #define ARR_PRINT(arr) \
-    for (auto &elt : arr) \
-    printf(BLUE "(%2.2f, %2.2f)" RESET "\n", elt.real(), elt.imag())
+    for (auto [e, elt] : std::views::enumerate(arr)) \
+        printf(BLUE "(%+2.4f, %+2.4f)" "%s" RESET ,elt.real(), elt.imag(), LINE_BREAKS[e % NUM_ELTS_PER_LINE].c_str())
 
 typedef std::complex<float> cf32;
+/* --- */
 
+/* Prototype jail */
 typedef struct
 {
     uint64_t sample_counter;
@@ -69,6 +77,7 @@ typedef struct
 
 void rtl_cb(unsigned char *buf, uint32_t len, void *ctx);
 void read_to_vec(unsigned char *buf, uint32_t len, std::vector<cf32> &iq);
+/* --- */
 
 int main(int argc, char **argv)
 {
@@ -185,8 +194,8 @@ void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
 
     if (samp_written < len)
     {
-        ERR_PRINT("[ERROR] Expected to write %u samples but only wrote %zu!",
-                  len, samp_written);
+        ERR_PRINT("Expected to write %u samples but only wrote %zu!", len,
+                  samp_written);
     }
     sdr_ctx->sample_counter += samp_written;
 

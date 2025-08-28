@@ -1,5 +1,5 @@
 CXXFLAGS=-Wall -Wextra
-CPPSTD=c++17
+CPPSTD=c++23
 LIBS=-lrtlsdr -lm
 
 .PHONY: all clean
