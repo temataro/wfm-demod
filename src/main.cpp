@@ -47,6 +47,10 @@
 #define GREEN   "\033[32m"
 #define BLUE    "\033[34m"
 #define RESET   "\033[0m"
+
+#define PI      3.1415926535898f
+#define RAD2DEG 180 / PI
+#define DEG2RAD PI / 180
 // clang-format off
 
 // Macros for colored fprintf
@@ -77,6 +81,7 @@ typedef struct
 
 void rtl_cb(unsigned char *buf, uint32_t len, void *ctx);
 void read_to_vec(unsigned char *buf, uint32_t len, std::vector<cf32> &iq);
+std::vector<float> phase_diff_wrapped(const std::vector<cf32> &iq);
 /* --- */
 
 int main(int argc, char **argv)
@@ -181,17 +186,10 @@ void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
 
     std::vector<cf32> iq((int)len / 2);
     read_to_vec(buf, len, iq);
-    ARR_PRINT(iq);
-    // for (auto &z : iq)
-    // {
-    //     printf("(%2.3f, %2.3f)\n", z.real(), z.imag());
-    // }
+    // ARR_PRINT(iq);
 
     size_t samp_written = fwrite(buf, 1, len, sdr_ctx->fp);
-    // size_t fwrite(const void ptr[restrict .size * .nmemb],
-    //          size_t size, size_t nmemb,
-    //          FILE *restrict stream);
-
+    std::vector<float> angle_diff = phase_diff_wrapped(iq);
     if (samp_written < len)
     {
         ERR_PRINT("Expected to write %u samples but only wrote %zu!", len,
@@ -234,4 +232,21 @@ void read_to_vec(unsigned char *buf, uint32_t len, std::vector<cf32> &iq)
     std::transform(iq.begin(), iq.end(), iq.begin(),
                    [mean](auto z) { return z - mean; });
     /* --- */
+}
+
+std::vector<float> phase_diff_wrapped(const std::vector<cf32> &iq)
+{
+    std::vector<float> angle_diff (iq.size(), 0);
+
+    for (auto [e, elt]: std::views::enumerate(iq))
+    {
+        if (e == 0) {continue;}
+        float diff = std::arg(iq[e]) - std::arg(iq[e-1]);
+        if (diff < -PI) {diff += PI;}
+        if (diff >  PI) {diff -= PI;}
+        printf("%+3.2f - %+3.2f = %+2.2f \n",  std::arg(iq[e]) * RAD2DEG, std::arg(iq[e-1]) * RAD2DEG, diff * RAD2DEG);
+        angle_diff[e] = diff;
+    }
+
+    return angle_diff;
 }
