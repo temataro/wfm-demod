@@ -33,6 +33,7 @@
 #include <vector>
 #include <algorithm>
 #include <ranges>
+#include <fstream>
 #include <rtl-sdr.h>
 #include <time.h>
 
@@ -51,6 +52,7 @@
 #define PI      3.1415926535898f
 #define RAD2DEG 180 / PI
 #define DEG2RAD PI / 180
+#define APPEND_FLAG std::ios::app // For fstream file writing operations
 // clang-format off
 
 // Macros for colored fprintf
@@ -81,6 +83,8 @@ typedef struct
 
 void rtl_cb(unsigned char *buf, uint32_t len, void *ctx);
 void read_to_vec(unsigned char *buf, uint32_t len, std::vector<cf32> &iq);
+void save_interleaved_cf32(const std::vector<cf32> &iq, const std::string &filename);
+void save_floats(const std::vector<float> &sig, const std::string &filename);
 std::vector<float> phase_diff_wrapped(const std::vector<cf32> &iq);
 /* --- */
 
@@ -186,10 +190,13 @@ void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
 
     std::vector<cf32> iq((int)len / 2);
     read_to_vec(buf, len, iq);
+    save_interleaved_cf32(iq, "out.cf32");
     // ARR_PRINT(iq);
 
     size_t samp_written = fwrite(buf, 1, len, sdr_ctx->fp);
+
     std::vector<float> angle_diff = phase_diff_wrapped(iq);
+    save_floats(angle_diff, "angle_diffs.f32");
     if (samp_written < len)
     {
         ERR_PRINT("Expected to write %u samples but only wrote %zu!", len,
@@ -208,6 +215,45 @@ void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
 
     fprintf(stderr, "[STATUS] Took %.5f ns to process. Wrote %lu samples.\r",
             proc_time, sdr_ctx->sample_counter);
+}
+
+void save_interleaved_cf32(const std::vector<cf32> &iq, const std::string &filename)
+{
+    std::ofstream ofs(filename, std::ios::binary | APPEND_FLAG);
+
+    for (auto& elt: iq)
+    {
+        float i = elt.real();
+        float q = elt.imag();
+
+        ofs.write(
+                reinterpret_cast<const char *> (&i), sizeof(float)
+                );
+        ofs.write(
+                reinterpret_cast<const char *> (&q), sizeof(float)
+                );
+ /*     basic_ostream& write( const char_type* s, std::streamsize count );
+  *     s: char pointer to the first byte of the variable's address
+  *     count: the number of bytes to copy over starting from the address pointed by s
+  *
+  *    outputs the characters from successive locations in the character array
+  *    whose first element is pointed to by s. Characters are inserted into the
+  *    output sequence until one of the following occurs:
+  *
+  *        exactly count characters are inserted
+  *        inserting into the output sequence fails (in which case
+  *        setstate(badbit) is called).
+  */
+    }
+}
+
+void save_floats(const std::vector<float> &sig, const std::string &filename)
+{
+    std::ofstream ofs(filename, std::ios::binary | APPEND_FLAG);
+    for (auto &elt: sig)
+    {
+        ofs.write(reinterpret_cast<const char*> (&elt), sizeof(float));;
+    }
 }
 
 /* DSP Functions */
