@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 
+"""
+Usage:
+    ./utils.py input.sc8 --dbg
+"""
+
 import sys
 import numpy as np
 import scipy as sp
@@ -12,7 +17,7 @@ from scipy.io.wavfile import write
 plt.style.use("./computermodern.mplstyle")
 
 DBG_PLT: bool = False
-if sys.argv[1] == '-dbg':
+if '--dbg' in sys.argv:
     DBG_PLT = True
 
 # constants
@@ -40,6 +45,21 @@ def read_iq(
                 file, dtype=np.int16, count=samples_IQ, offset=offset
             )
             ftype: str = "sc16"
+            sig = sig.reshape(sig.size // 2, 2)
+            # Convert to floats
+            sig = sig.astype(np.float32)
+
+            # remove dc offset
+            sig[:, 0] -= np.mean(sig[:, 0])
+            sig[:, 1] -= np.mean(sig[:, 1])
+            sig = sig[:, 0] + 1j * sig[:, 1]
+
+        elif ".sc8" in filename or ".cs8" in filename:
+            sig = np.fromfile(
+                file, dtype=np.int8, count=samples_IQ, offset=offset
+            )
+            ftype = "sc8"
+
             sig = sig.reshape(sig.size // 2, 2)
             # Convert to floats
             sig = sig.astype(np.float32)
@@ -118,9 +138,9 @@ def demod_fm(sig: npt.NDArray) -> npt.NDArray:
     angle_diff = np.where(angle_diff < -TAU / 2, 0, angle_diff)
 
     # LPF angle_diff
-    filt_ord: int = 11
+    filt_ord: int = 17
     b, a = sp.signal.butter(
-        N=filt_ord, Wn=200e3, btype="low", analog=False, output="ba", fs=fs
+        N=filt_ord, Wn=100e3, btype="low", analog=False, output="ba", fs=fs
     )
     angle_diff_lpf = sp.signal.filtfilt(b, a, angle_diff)
 
@@ -160,7 +180,7 @@ def center_transmission(sig: npt.NDArray, fc: float) -> npt.NDArray:
     """Center and filter a signal so the transmission desired shows up at 0 Hz offset."""
 
     t: npt.NDArray = np.arange(0, sig.size, dtype=np.float32) * dt
-    sig *= np.exp(1j*TAU*fc*t)
+    sig *= np.exp(1j * TAU * fc * t)
     filt_ord: int = 3
     b, a = sp.signal.butter(
         N=filt_ord, Wn=wfm_bandwidth, btype="low", analog=False, output="ba", fs=fs
@@ -175,6 +195,7 @@ def center_transmission(sig: npt.NDArray, fc: float) -> npt.NDArray:
         plt.show()
 
     return fm_filt
+
 
 def main() -> None:
     t: npt.NDArray = np.arange(0, 100_000, dtype=np.float32) * dt
@@ -198,16 +219,15 @@ def main() -> None:
     def test_demod(sig):
         demod_fm(sig)
 
-    infile: str = "./assets/analog_FM_France.sigmf-data"
-    file: str = ".".join(infile.split(".")[:-1])
-    fm: npt.NDArray = read_iq(infile)
-
+    infile: str = sys.argv[1]
+    sig = read_iq(infile)
+    sig = sp.signal.resample_poly(sig, up=1, down=10, window=("kaiser", 8.6))
     # fm_filt = center_transmission(fm, fc=-700e3)
-    fc: float = -700e3  # Hz
-    fm_filt: npt.NDArray = center_transmission(fm, fc=fc)
+    fc: float = 0  # Hz
+    fm_filt: npt.NDArray = center_transmission(sig, fc=fc)
 
     sig = demod_fm(fm_filt)
-    save_to_wav(sig, file + f"-{fc//1e3}KHz.wav")
+    save_to_wav(sig, infile + f"-{fc//1e3}KHz.wav")
 
 
 if __name__ == "__main__":
