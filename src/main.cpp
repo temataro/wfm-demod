@@ -42,7 +42,7 @@
 
 // clang-format off
 #define DEFAULT_FC          106'000'000 // 106 MHz (Radio Two)
-#define DEFAULT_SR          2'400'000   // 0.4 MSPS
+#define DEFAULT_SR          2'400'000   // 2.4 MSPS
 #define DEFAULT_GAIN        0           // auto-gain
 #define READ_SIZE           0x01 << 18  // 262,144 samples
 
@@ -56,12 +56,12 @@
 #define GREEN   "\033[32m"
 #define BLUE    "\033[34m"
 #define RESET   "\033[0m"
-
 #define PI      3.1415926535898f
 #define RAD2DEG 180 / PI
 #define DEG2RAD PI / 180
+// clang-format on
+
 #define APPEND_FLAG std::ios::app // For fstream file writing operations
-// clang-format off
 
 // Macros for colored fprintf
 #define ERR_PRINT(fmt, ...) \
@@ -75,7 +75,10 @@ size_t NUM_ELTS_PER_LINE = LINE_BREAKS.size();
 
 #define ARR_PRINT(arr) \
     for (auto [e, elt] : std::views::enumerate(arr)) \
-        printf(BLUE "(%+2.4f, %+2.4f)" "%s" RESET ,elt.real(), elt.imag(), LINE_BREAKS[e % NUM_ELTS_PER_LINE].c_str())
+    printf(BLUE "(%+2.4f, %+2.4f)" \
+                "%s" RESET, \
+           elt.real(), elt.imag(), \
+           LINE_BREAKS[e % NUM_ELTS_PER_LINE].c_str())
 
 typedef std::complex<float> cf32;
 /* --- */
@@ -92,7 +95,8 @@ typedef struct
 
 void rtl_cb(unsigned char *buf, uint32_t len, void *ctx);
 void read_to_vec(unsigned char *buf, uint32_t len, std::vector<cf32> &iq);
-void save_interleaved_cf32(const std::vector<cf32> &iq, const std::string &filename);
+void save_interleaved_cf32(const std::vector<cf32> &iq,
+                           const std::string &filename);
 void save_floats(const std::vector<float> &sig, const std::string &filename);
 std::vector<float> phase_diff_wrapped(const std::vector<cf32> &iq);
 /* --- */
@@ -163,21 +167,17 @@ int main(int argc, char **argv)
     sdr_ctx.benchmark_fp = benchmark_fp;
 
     // pulse audio device
-    static const pa_sample_spec ss = {
-        .format = PA_SAMPLE_S16LE,
-        .rate = AUDIO_SR,
-        .channels = NUM_AUDIO_CHAN
-    };
-    pa_simple *s = pa_simple_new(
-            NULL,               // Use default server
-            "WFM Demod App",    // Application Name
-            PA_STREAM_PLAYBACK,
-            NULL,               // Use default device
-            "La Musica",        // Description of stream
-            &ss,                // Sample format
-            NULL,
-            NULL,
-            NULL                // ignore error code
+    static const pa_sample_spec ss = {.format = PA_SAMPLE_S16LE,
+                                      .rate = AUDIO_SR,
+                                      .channels = NUM_AUDIO_CHAN};
+    pa_simple *s = pa_simple_new(NULL, // Use default server
+                                 "WFM Demod App", // Application Name
+                                 PA_STREAM_PLAYBACK,
+                                 NULL, // Use default device
+                                 "La Musica", // Description of stream
+                                 &ss, // Sample format
+                                 NULL, NULL,
+                                 NULL // ignore error code
     );
     sdr_ctx.s = s;
     /* --- */
@@ -244,25 +244,25 @@ void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
     int16_t audio_buffer[len_audio_buffer];
 
     int error;
-    // TODO: just to test, let's also write this audio_buffer out to a file
+    // Just to test, let's also write this audio_buffer out to a file
     // and see if it sounds like anything...
     std::ofstream ofs("audio_buffer.pcm", std::ios::binary | APPEND_FLAG);
-    for (size_t i = 0; i < num_samples /(decimation_value * len_audio_buffer); i++)
+    for (size_t i = 0; i < num_samples / (decimation_value * len_audio_buffer);
+         i++)
     {
         int idx_start = i * len_audio_buffer * decimation_value;
         for (size_t j = 0; j < len_audio_buffer; j++)
         {
-            int16_t val = static_cast<int16_t> (angle_diff[j * decimation_value + idx_start] * (AUDIO_VOLUME * FULL_SCALE_AUDIO) / PI);
+            int16_t val = static_cast<int16_t>(
+                angle_diff[j * decimation_value + idx_start]
+                * (AUDIO_VOLUME * FULL_SCALE_AUDIO) / PI);
             audio_buffer[j] = val;
-            ofs.write(reinterpret_cast<const char *> (&val), sizeof(int16_t));
+            ofs.write(reinterpret_cast<const char *>(&val), sizeof(int16_t));
         }
-        if(
-                pa_simple_write(
-                sdr_ctx->s,
-                audio_buffer,
-                len_audio_buffer * NUM_AUDIO_CHAN * sizeof(int16_t),
-                &error
-                ) < 0)
+        if (pa_simple_write(
+                sdr_ctx->s, audio_buffer,
+                len_audio_buffer * NUM_AUDIO_CHAN * sizeof(int16_t), &error)
+            < 0)
         {
             ERR_PRINT("pa_simple_write: %s\n", pa_strerror(error));
         }
@@ -276,8 +276,6 @@ void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
                   samp_written);
     }
     sdr_ctx->sample_counter += samp_written;
-
-
 
     // END OF CB  -- Cleanup and profiling
     clock_t time = clock();
@@ -293,42 +291,41 @@ void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
             proc_time, sdr_ctx->sample_counter);
 }
 
-void save_interleaved_cf32(const std::vector<cf32> &iq, const std::string &filename)
+void save_interleaved_cf32(const std::vector<cf32> &iq,
+                           const std::string &filename)
 {
     std::ofstream ofs(filename, std::ios::binary | APPEND_FLAG);
 
-    for (auto& elt: iq)
+    for (auto &elt : iq)
     {
         float i = elt.real();
         float q = elt.imag();
 
-        ofs.write(
-                reinterpret_cast<const char *> (&i), sizeof(float)
-                );
-        ofs.write(
-                reinterpret_cast<const char *> (&q), sizeof(float)
-                );
- /*     basic_ostream& write( const char_type* s, std::streamsize count );
-  *     s: char pointer to the first byte of the variable's address
-  *     count: the number of bytes to copy over starting from the address pointed by s
-  *
-  *    outputs the characters from successive locations in the character array
-  *    whose first element is pointed to by s. Characters are inserted into the
-  *    output sequence until one of the following occurs:
-  *
-  *        exactly count characters are inserted
-  *        inserting into the output sequence fails (in which case
-  *        setstate(badbit) is called).
-  */
+        ofs.write(reinterpret_cast<const char *>(&i), sizeof(float));
+        ofs.write(reinterpret_cast<const char *>(&q), sizeof(float));
+        /*     basic_ostream& write( const char_type* s, std::streamsize count
+         * ); s: char pointer to the first byte of the variable's address
+         *     count: the number of bytes to copy over starting from the
+         * address pointed by s
+         *
+         *    outputs the characters from successive locations in the character
+         * array whose first element is pointed to by s. Characters are
+         * inserted into the output sequence until one of the following occurs:
+         *
+         *        exactly count characters are inserted
+         *        inserting into the output sequence fails (in which case
+         *        setstate(badbit) is called).
+         */
     }
 }
 
 void save_floats(const std::vector<float> &sig, const std::string &filename)
 {
     std::ofstream ofs(filename, std::ios::binary | APPEND_FLAG);
-    for (auto &elt: sig)
+    for (auto &elt : sig)
     {
-        ofs.write(reinterpret_cast<const char*> (&elt), sizeof(float));;
+        ofs.write(reinterpret_cast<const char *>(&elt), sizeof(float));
+        ;
     }
 }
 
@@ -358,15 +355,25 @@ void read_to_vec(unsigned char *buf, uint32_t len, std::vector<cf32> &iq)
 
 std::vector<float> phase_diff_wrapped(const std::vector<cf32> &iq)
 {
-    std::vector<float> angle_diff (iq.size(), 0);
+    std::vector<float> angle_diff(iq.size(), 0);
 
-    for (auto [e, elt]: std::views::enumerate(iq))
+    for (auto [e, elt] : std::views::enumerate(iq))
     {
-        if (e == 0) {continue;}
-        float diff = std::arg(iq[e]) - std::arg(iq[e-1]);
-        if (diff < -PI) {diff += PI;}
-        if (diff >  PI) {diff -= PI;}
-        // printf("%+3.2f - %+3.2f = %+2.2f \n",  std::arg(iq[e]) * RAD2DEG, std::arg(iq[e-1]) * RAD2DEG, diff * RAD2DEG);
+        if (e == 0)
+        {
+            continue;
+        }
+        float diff = std::arg(iq[e]) - std::arg(iq[e - 1]);
+        if (diff < -PI)
+        {
+            diff += PI;
+        }
+        if (diff > PI)
+        {
+            diff -= PI;
+        }
+        // printf("%+3.2f - %+3.2f = %+2.2f \n",  std::arg(iq[e]) * RAD2DEG,
+        // std::arg(iq[e-1]) * RAD2DEG, diff * RAD2DEG);
         angle_diff[e] = diff;
     }
 
