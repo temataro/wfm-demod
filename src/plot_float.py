@@ -15,15 +15,16 @@ angle_diff = np.fromfile(filename, dtype=np.float32)
 
 # LPF angle_diff
 filt_ord: int = 3
-fs: float = 2.4e6 / 6 # sample rate at which IQ signal was recorded
+fs: float = 2.4e6 # sample rate at which IQ signal was recorded
 b, a = sp.signal.butter(
     N=filt_ord, Wn=80e3, btype="low", analog=False, output="ba", fs=fs
 )
 angle_diff_lpf = sp.signal.filtfilt(b, a, angle_diff)
 
-plt.plot(angle_diff[:10_000], 'k-', alpha=0.7)
-plt.plot(angle_diff_lpf[:10_000], 'r-.', alpha=0.7)
-plt.show()
+if '--dbg' in sys.argv:
+    plt.plot(angle_diff[:10_000], 'k-', alpha=0.7)
+    plt.plot(angle_diff_lpf[:10_000], 'r-.', alpha=0.7)
+    plt.show()
 
 
 def save_to_wav(audio: npt.NDArray, outfile: str) -> None:

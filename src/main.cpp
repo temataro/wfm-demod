@@ -39,7 +39,7 @@
 
 // clang-format off
 #define DEFAULT_FC      106'000'000 // 106 MHz (Radio Two)
-#define DEFAULT_SR      400'000   // 0.4 MSPS
+#define DEFAULT_SR      2'400'000   // 0.4 MSPS
 #define DEFAULT_GAIN    0           // auto-gain
 #define READ_SIZE       0x01 << 18  // 262,144 samples
 
