@@ -1,6 +1,6 @@
 CXXFLAGS=-Wall -Wextra
 CPPSTD=c++23
-LIBS=-lrtlsdr -lm
+LIBS=-lrtlsdr -lm -lpulse-simple -lpulse
 
 .PHONY: all clean
 

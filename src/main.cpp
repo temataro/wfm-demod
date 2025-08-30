@@ -34,14 +34,22 @@
 #include <algorithm>
 #include <ranges>
 #include <fstream>
+#include <cassert>
+#include <pulse/simple.h>
+#include <pulse/error.h>
 #include <rtl-sdr.h>
 #include <time.h>
 
 // clang-format off
-#define DEFAULT_FC      106'000'000 // 106 MHz (Radio Two)
-#define DEFAULT_SR      2'400'000   // 0.4 MSPS
-#define DEFAULT_GAIN    0           // auto-gain
-#define READ_SIZE       0x01 << 18  // 262,144 samples
+#define DEFAULT_FC          106'000'000 // 106 MHz (Radio Two)
+#define DEFAULT_SR          2'400'000   // 0.4 MSPS
+#define DEFAULT_GAIN        0           // auto-gain
+#define READ_SIZE           0x01 << 18  // 262,144 samples
+
+#define FULL_SCALE_AUDIO    32768.f
+#define NUM_AUDIO_CHAN      1
+#define AUDIO_SR            48000
+#define AUDIO_VOLUME        10.f/100.f
 
 /* Convenience macros */
 #define RED     "\033[31m"
@@ -79,6 +87,7 @@ typedef struct
     clock_t init_time;
     FILE *fp;
     FILE *benchmark_fp;
+    pa_simple *s;
 } sdr_ctx_t;
 
 void rtl_cb(unsigned char *buf, uint32_t len, void *ctx);
@@ -152,6 +161,25 @@ int main(int argc, char **argv)
         ERR_PRINT("Error opening file! Terminating.");
     }
     sdr_ctx.benchmark_fp = benchmark_fp;
+
+    // pulse audio device
+    static const pa_sample_spec ss = {
+        .format = PA_SAMPLE_S16LE,
+        .rate = AUDIO_SR,
+        .channels = NUM_AUDIO_CHAN
+    };
+    pa_simple *s = pa_simple_new(
+            NULL,               // Use default server
+            "WFM Demod App",    // Application Name
+            PA_STREAM_PLAYBACK,
+            NULL,               // Use default device
+            "La Musica",        // Description of stream
+            &ss,                // Sample format
+            NULL,
+            NULL,
+            NULL                // ignore error code
+    );
+    sdr_ctx.s = s;
     /* --- */
 
     /*!
@@ -176,6 +204,8 @@ int main(int argc, char **argv)
                       0, // buf_num
                       READ_SIZE // buf_len
     );
+    pa_simple_drain(s, NULL);
+    pa_simple_free(s);
 
     rtlsdr_close(dev);
     fclose(sdr_ctx.fp);
@@ -188,14 +218,52 @@ void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
 {
     sdr_ctx_t *sdr_ctx = (sdr_ctx_t *)ctx;
 
+    // DSP
     std::vector<cf32> iq((int)len / 2);
     read_to_vec(buf, len, iq);
-    save_interleaved_cf32(iq, "out.cf32");
     // ARR_PRINT(iq);
 
     size_t samp_written = fwrite(buf, 1, len, sdr_ctx->fp);
 
     std::vector<float> angle_diff = phase_diff_wrapped(iq);
+
+    // Play out through pulseaudio
+    // We have 2^18 samples that we'll chunk into 2^10 sized sections
+    // (Thereby giving us READ_SIZE / len_audio_buffer = 2^8=64 sections)
+    // For each section we'll index into angle_diff at a different start and
+    // end point so we get 1024 fresh sections in the buffer.
+    //
+    // We're recording at 2.4MSps, not playing back at the same rate
+    // For now we'll do a 'naive' decimation where I'll just take one every
+    // 50 every samples. Later, we'll want to polyphase resample by the same
+    // decimation value.
+    size_t decimation_value = DEFAULT_SR / AUDIO_SR;
+
+    size_t num_samples = angle_diff.size();
+    const size_t len_audio_buffer = 1024;
+    int16_t audio_buffer[len_audio_buffer];
+
+    int error;
+    for (size_t i = 0; i < num_samples /(decimation_value * len_audio_buffer); i++)
+    {
+        int idx_start = i * len_audio_buffer * decimation_value;
+        for (size_t j = 0; j < len_audio_buffer; j++)
+        {
+            audio_buffer[j] = static_cast<int16_t> (angle_diff[j * decimation_value + idx_start] * (AUDIO_VOLUME * FULL_SCALE_AUDIO) / PI);
+        }
+        if(
+                pa_simple_write(
+                sdr_ctx->s,
+                audio_buffer,
+                len_audio_buffer * NUM_AUDIO_CHAN * sizeof(int16_t),
+                &error
+                ) < 0)
+        {
+            ERR_PRINT("pa_simple_write: %s\n", pa_strerror(error));
+        }
+    }
+
+    save_interleaved_cf32(iq, "out.cf32");
     save_floats(angle_diff, "angle_diffs.f32");
     if (samp_written < len)
     {
@@ -204,6 +272,9 @@ void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
     }
     sdr_ctx->sample_counter += samp_written;
 
+
+
+    // END OF CB  -- Cleanup and profiling
     clock_t time = clock();
     double proc_time = (time - sdr_ctx->init_time) * 1e9 / CLOCKS_PER_SEC;
     sdr_ctx->init_time = time;
