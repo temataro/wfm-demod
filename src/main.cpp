@@ -49,7 +49,7 @@
 #define FULL_SCALE_AUDIO    32768.f
 #define NUM_AUDIO_CHAN      1
 #define AUDIO_SR            48000
-#define AUDIO_VOLUME        10.f/100.f
+#define AUDIO_VOLUME        80.f/100.f
 
 /* Convenience macros */
 #define RED     "\033[31m"
@@ -240,16 +240,21 @@ void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
     size_t decimation_value = DEFAULT_SR / AUDIO_SR;
 
     size_t num_samples = angle_diff.size();
-    const size_t len_audio_buffer = 1024;
+    const size_t len_audio_buffer = 0x01 << 11;
     int16_t audio_buffer[len_audio_buffer];
 
     int error;
+    // TODO: just to test, let's also write this audio_buffer out to a file
+    // and see if it sounds like anything...
+    std::ofstream ofs("audio_buffer.pcm", std::ios::binary | APPEND_FLAG);
     for (size_t i = 0; i < num_samples /(decimation_value * len_audio_buffer); i++)
     {
         int idx_start = i * len_audio_buffer * decimation_value;
         for (size_t j = 0; j < len_audio_buffer; j++)
         {
-            audio_buffer[j] = static_cast<int16_t> (angle_diff[j * decimation_value + idx_start] * (AUDIO_VOLUME * FULL_SCALE_AUDIO) / PI);
+            int16_t val = static_cast<int16_t> (angle_diff[j * decimation_value + idx_start] * (AUDIO_VOLUME * FULL_SCALE_AUDIO) / PI);
+            audio_buffer[j] = val;
+            ofs.write(reinterpret_cast<const char *> (&val), sizeof(int16_t));
         }
         if(
                 pa_simple_write(
