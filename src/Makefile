@@ -11,6 +11,7 @@ all: main
 	./$@ out.iq
 
 inspect:
+	inspectrum *cf32
 	inspectrum --format sc8 *iq
 
 graph:
@@ -52,3 +53,6 @@ graph:
 
 sharp:
 	clang-format -i *.cpp
+
+clean:
+	rm *cf32 *wav *sc8 *cs8 *f32

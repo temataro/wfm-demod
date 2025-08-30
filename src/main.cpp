@@ -39,7 +39,7 @@
 
 // clang-format off
 #define DEFAULT_FC      106'000'000 // 106 MHz (Radio Two)
-#define DEFAULT_SR      2'400'000   // 2.4 MSPS
+#define DEFAULT_SR      400'000   // 0.4 MSPS
 #define DEFAULT_GAIN    0           // auto-gain
 #define READ_SIZE       0x01 << 18  // 262,144 samples
 
@@ -290,7 +290,7 @@ std::vector<float> phase_diff_wrapped(const std::vector<cf32> &iq)
         float diff = std::arg(iq[e]) - std::arg(iq[e-1]);
         if (diff < -PI) {diff += PI;}
         if (diff >  PI) {diff -= PI;}
-        printf("%+3.2f - %+3.2f = %+2.2f \n",  std::arg(iq[e]) * RAD2DEG, std::arg(iq[e-1]) * RAD2DEG, diff * RAD2DEG);
+        // printf("%+3.2f - %+3.2f = %+2.2f \n",  std::arg(iq[e]) * RAD2DEG, std::arg(iq[e-1]) * RAD2DEG, diff * RAD2DEG);
         angle_diff[e] = diff;
     }
 
