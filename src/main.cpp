@@ -52,13 +52,13 @@
 #define AUDIO_VOLUME        80.f/100.f
 
 /* Convenience macros */
-#define RED     "\033[31m"
-#define GREEN   "\033[32m"
-#define BLUE    "\033[34m"
-#define RESET   "\033[0m"
-#define PI      3.1415926535898f
-#define RAD2DEG 180 / PI
-#define DEG2RAD PI / 180
+#define RED                 "\033[31m"
+#define GREEN               "\033[32m"
+#define BLUE                "\033[34m"
+#define RESET               "\033[0m"
+#define PI                  3.1415926535898f
+#define RAD2DEG             180 / PI
+#define DEG2RAD             PI / 180
 // clang-format on
 
 #define APPEND_FLAG std::ios::app // For fstream file writing operations
@@ -82,6 +82,61 @@ size_t NUM_ELTS_PER_LINE = LINE_BREAKS.size();
 
 typedef std::complex<float> cf32;
 /* --- */
+
+static float fir_taps[150] = {
+    -8.891121979104355e-05, -4.568894291878678e-05, 1.324024321037531e-19,
+    4.8910344048636034e-05, 0.00010176578507525846, 0.00015918372082524002,
+    0.0002215989661635831,  0.0002891898329835385,  0.0003618094197008759,
+    0.0004389254027046263,  0.0005195712437853217,  0.0006023115711286664,
+    0.000685224134940654,   0.000765899836551398,   0.0008414634503424168,
+    0.0009086140780709684,  0.0009636876056902111,  0.0010027388343587518,
+    0.001021643984131515,   0.0010162197286263108,  0.0009823590517044067,
+    0.0009161773486994207,  0.000814169819932431,   0.0006733705522492528,
+    0.000491514103487134,   0.0002671921392902732,  -5.397885477439954e-19,
+    -0.0003093295672442764, -0.0006588120013475418, -0.001045119483023882,
+    -0.0014635164989158511, -0.0019078265177085996, -0.002370431087911129,
+    -0.002842305926606059,  -0.003313093911856413,  -0.0037712145131081343,
+    -0.004204011056572199,  -0.004597933497279882,  -0.004938754718750715,
+    -0.005211817566305399,  -0.005402303300797939,  -0.005495528690516949,
+    -0.005477248691022396,  -0.005333978217095137,  -0.00505330553278327,
+    -0.004624209366738796,  -0.004037360195070505,  -0.0032853989396244287,
+    -0.0023631977383047342, -0.0012680785730481148, 1.2666409924871375e-18,
+    0.0014383041998371482,  0.0030412343330681324,  0.004800286144018173,
+    0.006704068277031183,   0.008738373406231403,   0.01088631246238947,
+    0.0131284911185503,     0.015443259850144386,   0.017806991934776306,
+    0.020194420590996742,   0.0225790124386549,     0.02493337355554104,
+    0.02722967229783535,    0.029440095648169518,   0.03153730556368828,
+    0.03349488228559494,    0.03528778627514839,    0.03689277544617653,
+    0.038288816809654236,   0.03945744410157204,    0.04038307070732117,
+    0.04105329513549805,    0.041459083557128906,   0.041594959795475006,
+    0.041459083557128906,   0.04105329513549805,    0.04038307070732117,
+    0.03945744410157204,    0.038288816809654236,   0.03689277544617653,
+    0.03528778627514839,    0.03349488228559494,    0.03153730556368828,
+    0.029440095648169518,   0.02722967229783535,    0.02493337355554104,
+    0.0225790124386549,     0.020194420590996742,   0.017806991934776306,
+    0.015443259850144386,   0.0131284911185503,     0.01088631246238947,
+    0.008738373406231403,   0.006704068277031183,   0.004800286144018173,
+    0.0030412343330681324,  0.0014383041998371482,  1.2666409924871375e-18,
+    -0.0012680785730481148, -0.0023631977383047342, -0.0032853989396244287,
+    -0.004037360195070505,  -0.004624209366738796,  -0.00505330553278327,
+    -0.005333978217095137,  -0.005477248691022396,  -0.005495528690516949,
+    -0.005402303300797939,  -0.005211817566305399,  -0.004938754718750715,
+    -0.004597933497279882,  -0.004204011056572199,  -0.0037712145131081343,
+    -0.003313093911856413,  -0.002842305926606059,  -0.002370431087911129,
+    -0.0019078265177085996, -0.0014635164989158511, -0.001045119483023882,
+    -0.0006588120013475418, -0.0003093295672442764, -5.397885477439954e-19,
+    0.0002671921392902732,  0.000491514103487134,   0.0006733705522492528,
+    0.000814169819932431,   0.0009161773486994207,  0.0009823590517044067,
+    0.0010162197286263108,  0.001021643984131515,   0.0010027388343587518,
+    0.0009636876056902111,  0.0009086140780709684,  0.0008414634503424168,
+    0.000765899836551398,   0.000685224134940654,   0.0006023115711286664,
+    0.0005195712437853217,  0.0004389254027046263,  0.0003618094197008759,
+    0.0002891898329835385,  0.0002215989661635831,  0.00015918372082524002,
+    0.00010176578507525846, 4.8910344048636034e-05, 1.324024321037531e-19,
+    -4.568894291878678e-05, -8.891121979104355e-05, 0.000000};
+// Generated a 149 tap Hamming window 40dB suppression filter with GNU
+// Radio and appended one zero to make it 150 taps. Now ready to hopefully
+// use with polyphase resampling but also possibly not linear anymore.
 
 /* Prototype jail */
 typedef struct
@@ -378,4 +433,59 @@ std::vector<float> phase_diff_wrapped(const std::vector<cf32> &iq)
     }
 
     return angle_diff;
+}
+
+void conv(const std::vector<float> &x, const std::vector<float> &h,
+              std::vector<float> &y)
+{
+    /*
+     * Hand-rolling a convolution function because why not add the worry of not
+     * doing this section correctly too.
+     *
+     * Won't bother profiling but should probably consider doing the FFT
+     * version of this in case it's faster. But in our use case, we're
+     * convolving 1x3 elt arrays with 1x2622 elt arrays. Probably not worth it.
+     *
+     * According to GPT, I can probably use vectorization if my compiler
+     * can understand what I'm trying to say...
+     *
+     * Rules:   Pass sizes explicitly
+     *          Mark inputs const and outputs non-const; use restrict to
+                declare no aliasing b/n them
+     *          Loop has no branches and has no history of previous results
+     *          No function calls inside hot loops unless inlinable
+     *          Operate on contiguous data and avoid stride/weird increments
+     *
+     *          Ask the compiler to tell you:
+                    GCC: -fopt-info-vec-optimized -fopt-info-vec-missed
+                    Clang: -Rpass=loop-vectorize -Rpass-missed=loop-vectorize
+     */
+
+    // Plan:
+    // For N = x.size() and M = h.size()
+    // -- make a (NxM-1)x(NxM-1) sized 2D float array of zeros
+    // -- for the X vector (my input samples), go through the array
+    //
+
+    // Naive approach:
+    size_t N = x.size();
+    size_t M = h.size();
+    size_t h_pad_size = M + 2 * N - 2;
+
+    std::vector<float> h_pad(h_pad_size, 0);
+
+    std::copy(h.begin(), h.begin() + M, // src start and end slices
+              h_pad.begin() + N - 1); // zero pad b by N-1
+                                      // zeros on either side
+
+    std::reverse(h_pad.begin(), h_pad.end()); // reverse second arr before conv
+
+    for (size_t i = 0; i < N; i++)
+    {
+        int start = h_pad_size - N - i;
+        for (size_t j = 0; j < N; j++)
+        {
+            y[i] += x[j] * h_pad[start + j];
+        }
+    }
 }

@@ -1,13 +1,14 @@
 CXXFLAGS=-Wall -Wextra
 CPPSTD=c++23
 LIBS=-lrtlsdr -lm -lpulse-simple -lpulse
+OPTS=-march=native -ffast-math -O2
 
 .PHONY: all clean
 
 all: main
 
 %: %.cpp
-	clang++ $(CXXFLAGS) -std=$(CPPSTD) $< -o $@ $(LIBS)
+	clang++ $(CXXFLAGS) -std=$(CPPSTD) $< -o $@ $(LIBS) $(OPTS)
 	./$@ out.iq
 
 inspect:
