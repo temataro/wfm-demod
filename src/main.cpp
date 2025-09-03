@@ -83,6 +83,14 @@ size_t NUM_ELTS_PER_LINE = LINE_BREAKS.size();
 typedef std::complex<float> cf32;
 /* --- */
 
+// Access 1D vec as if it's a 2D array helper function
+inline const float& vec_at(const std::vector<float> &arr, int r, int c, int ncols)
+{
+    return arr[r * ncols + c];
+}
+
+#define arr_at(arr_ptr, r, c, ncols) arr_ptr[r * ncols + c]
+
 static float fir_taps[150] = {
     -8.891121979104355e-05, -4.568894291878678e-05, 1.324024321037531e-19,
     4.8910344048636034e-05, 0.00010176578507525846, 0.00015918372082524002,
@@ -282,16 +290,17 @@ void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
 
     std::vector<float> angle_diff = phase_diff_wrapped(iq);
 
-    // Play out through pulseaudio
-    // We have 2^18 samples that we'll chunk into 2^10 sized sections
-    // (Thereby giving us READ_SIZE / len_audio_buffer = 2^8=64 sections)
-    // For each section we'll index into angle_diff at a different start and
-    // end point so we get 1024 fresh sections in the buffer.
-    //
-    // We're recording at 2.4MSps, not playing back at the same rate
-    // For now we'll do a 'naive' decimation where I'll just take one every
-    // 50 every samples. Later, we'll want to polyphase resample by the same
-    // decimation value.
+    /* Play out through pulseaudio
+     * We have 2^18 samples that we'll chunk into 2^10 sized sections
+     * (Thereby giving us READ_SIZE / len_audio_buffer = 2^8=64 sections)
+     * For each section we'll index into angle_diff at a different start and
+     * end point so we get 1024 fresh sections in the buffer.
+     *
+     * We're recording at 2.4MSps, not playing back at the same rate
+     * For now we'll do a 'naive' decimation where I'll just take one every
+     * 50 every samples. Later, we'll want to polyphase resample by the same
+     * decimation value.
+     */
     size_t decimation_value = DEFAULT_SR / AUDIO_SR;
 
     size_t num_samples = angle_diff.size();
@@ -435,8 +444,40 @@ std::vector<float> phase_diff_wrapped(const std::vector<cf32> &iq)
     return angle_diff;
 }
 
-void conv(const std::vector<float> &x, const std::vector<float> &h,
-              std::vector<float> &y)
+void polyphase_resample(const float* fir, const std::vector<float> &x, float[2622] y)
+{
+    /*
+     * Resamples before implementing an FIR filter which is better for
+     * performance.
+     * Following this guide:
+     *                  https://www.dsprelated.com/showarticle/191.php
+     *
+     * To make indexing easier, After the convolution outputs I'll split
+     * the first row and all the rest into two separate arrays.
+     */
+
+    // TODO: don't hardcode decimation value
+    std::vector<std::vector<float>> sections(50);
+
+    sections[0] = conv(x[0], h[0]);  // The first one is handled differently
+    for (size_t conv_num = 1; conv_num < 50; conv_num++)
+    {
+        sections[conv_num] = conv(x[50-conv_num], fir[conv_num]);
+    }
+
+    y[0] = sections[0][0];
+    for (size_t i = 1; i < 2622; i++)
+    {
+        sum = sections[0][i];  // accumulate this for y[i]
+        for (size_t j = 0; j < 50-1; j++)
+        {
+            sum += sections[j][i-1];
+        }
+        y[i] = sum;
+    }
+}
+
+std::vector<float> conv(const std::vector<float> &x, const std::vector<float> &h)
 {
     /*
      * Hand-rolling a convolution function because why not add the worry of not
@@ -473,6 +514,7 @@ void conv(const std::vector<float> &x, const std::vector<float> &h,
     size_t h_pad_size = M + 2 * N - 2;
 
     std::vector<float> h_pad(h_pad_size, 0);
+    std::vector<float> y(N, 0);
 
     std::copy(h.begin(), h.begin() + M, // src start and end slices
               h_pad.begin() + N - 1); // zero pad b by N-1
@@ -488,4 +530,6 @@ void conv(const std::vector<float> &x, const std::vector<float> &h,
             y[i] += x[j] * h_pad[start + j];
         }
     }
+
+    return y;
 }
