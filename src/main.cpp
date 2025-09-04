@@ -49,7 +49,7 @@
 #define FULL_SCALE_AUDIO    32768.f
 #define NUM_AUDIO_CHAN      1
 #define AUDIO_SR            48000
-#define AUDIO_VOLUME        80.f/100.f
+#define AUDIO_VOLUME        90.f/100.f
 
 /* Convenience macros */
 #define RED                 "\033[31m"
@@ -71,7 +71,8 @@
     fprintf(stdout, GREEN "[INFO]" fmt RESET "\n", ##__VA_ARGS__)
 
 std::vector<std::string> LINE_BREAKS = {"\t", "\t", "\t", "\t", "\t", "\n"};
-size_t NUM_ELTS_PER_LINE = LINE_BREAKS.size();
+const size_t NUM_ELTS_PER_LINE = LINE_BREAKS.size();
+const size_t decimation_value = DEFAULT_SR / AUDIO_SR;
 
 #define ARR_PRINT(arr) \
     for (auto [e, elt] : std::views::enumerate(arr)) \
@@ -83,15 +84,7 @@ size_t NUM_ELTS_PER_LINE = LINE_BREAKS.size();
 typedef std::complex<float> cf32;
 /* --- */
 
-// Access 1D vec as if it's a 2D array helper function
-inline const float& vec_at(const std::vector<float> &arr, int r, int c, int ncols)
-{
-    return arr[r * ncols + c];
-}
-
-#define arr_at(arr_ptr, r, c, ncols) arr_ptr[r * ncols + c]
-
-static float fir_taps[150] = {
+static std::vector<float> fir_taps = {
     -8.891121979104355e-05, -4.568894291878678e-05, 1.324024321037531e-19,
     4.8910344048636034e-05, 0.00010176578507525846, 0.00015918372082524002,
     0.0002215989661635831,  0.0002891898329835385,  0.0003618094197008759,
@@ -162,7 +155,46 @@ void save_interleaved_cf32(const std::vector<cf32> &iq,
                            const std::string &filename);
 void save_floats(const std::vector<float> &sig, const std::string &filename);
 std::vector<float> phase_diff_wrapped(const std::vector<cf32> &iq);
+std::vector<float> conv(const std::vector<float> &x,
+                        const std::vector<float> &h);
 /* --- */
+
+
+std::vector<float> gptconvolve(const std::vector<float>& a,
+                            const std::vector<float>& b) {
+    size_t n = a.size();
+    size_t m = b.size();
+    std::vector<float> result(n + m - 1, 0.0f);
+
+    for (size_t u = 0; u < n; ++u)
+        for (size_t v = 0; v < m; ++v)
+            result[u + v] += a[u] * b[v];
+
+    return result;
+}
+
+void test_convs()
+{
+    std::vector<float> x(12);
+    std::vector<float> h(3);
+
+    for (int i = 0; i < 12; i++)
+    {
+        x[i] = i;
+        h[i % 3] = i;
+    }
+
+    std::vector<float> myconv = conv(x, h);
+    std::vector<float> gptconv = gptconvolve(x, h);
+
+    for (size_t i = 0; i < myconv.size(); i++){
+        printf("%.2f ", myconv[i]);
+    }
+    printf("\n\nGPT_CONV: \n\n");
+    for (size_t i = 0; i < gptconv.size(); i++){
+        printf("%.2f ", gptconv[i]);
+    }
+}
 
 int main(int argc, char **argv)
 {
@@ -301,39 +333,57 @@ void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
      * 50 every samples. Later, we'll want to polyphase resample by the same
      * decimation value.
      */
-    size_t decimation_value = DEFAULT_SR / AUDIO_SR;
 
-    size_t num_samples = angle_diff.size();
-    const size_t len_audio_buffer = 0x01 << 11;
+    const size_t len_audio_buffer = 2622; // 2622 * 50 = 131,100 -- roughly
+                                          // how many samples we get from the
+                                          // SDR callback at once...
+    /*
+     * Apply polyphase resampling or any other DSP to lowpass/process the audio
+     * signal.
+     */
+
+    std::vector<float> angle_diff_lpf = gptconvolve(angle_diff, fir_taps);
+
     int16_t audio_buffer[len_audio_buffer];
+    size_t samples_to_decimate = angle_diff_lpf.size();
+
+    float val;
+    size_t i = 0;
+    while ((i < samples_to_decimate) && (i < len_audio_buffer))
+    {
+        val = angle_diff_lpf[i * decimation_value];
+        val /= PI;
+        val *= (AUDIO_VOLUME * FULL_SCALE_AUDIO);
+        audio_buffer[i] = (int16_t) val;
+
+        i += 1;
+    }
+
+    /*
+    Goal is to eventually get to
+
+    float audio_buffer_f[len_audio_buffer];
+    angle_diff.resize(131100, 0.0f); // zero pad to get to % 50 == 0
+    polyphase_resample(fir_taps, angle_diff, audio_buffer_f);
+
+    to avoid wasting 49/50 of the samples we LPF'd
+
+    for now just decimate after collecting.
+    */
 
     int error;
-    // Just to test, let's also write this audio_buffer out to a file
-    // and see if it sounds like anything...
-    std::ofstream ofs("audio_buffer.pcm", std::ios::binary | APPEND_FLAG);
-    for (size_t i = 0; i < num_samples / (decimation_value * len_audio_buffer);
-         i++)
+    if (pa_simple_write(sdr_ctx->s, audio_buffer,
+                        len_audio_buffer * NUM_AUDIO_CHAN * sizeof(int16_t),
+                        &error)
+        < 0)
     {
-        int idx_start = i * len_audio_buffer * decimation_value;
-        for (size_t j = 0; j < len_audio_buffer; j++)
-        {
-            int16_t val = static_cast<int16_t>(
-                angle_diff[j * decimation_value + idx_start]
-                * (AUDIO_VOLUME * FULL_SCALE_AUDIO) / PI);
-            audio_buffer[j] = val;
-            ofs.write(reinterpret_cast<const char *>(&val), sizeof(int16_t));
-        }
-        if (pa_simple_write(
-                sdr_ctx->s, audio_buffer,
-                len_audio_buffer * NUM_AUDIO_CHAN * sizeof(int16_t), &error)
-            < 0)
-        {
-            ERR_PRINT("pa_simple_write: %s\n", pa_strerror(error));
-        }
+        ERR_PRINT("pa_simple_write: %s\n", pa_strerror(error));
     }
+    /* *** --- *** */
 
     save_interleaved_cf32(iq, "out.cf32");
     save_floats(angle_diff, "angle_diffs.f32");
+    save_floats(angle_diff_lpf, "angle_diff_lpf.f32");
     if (samp_written < len)
     {
         ERR_PRINT("Expected to write %u samples but only wrote %zu!", len,
@@ -444,40 +494,27 @@ std::vector<float> phase_diff_wrapped(const std::vector<cf32> &iq)
     return angle_diff;
 }
 
-void polyphase_resample(const float* fir, const std::vector<float> &x, float[2622] y)
+std::vector<std::vector<float> > section_vec(const std::vector<float> &x,
+                                             size_t section)
 {
-    /*
-     * Resamples before implementing an FIR filter which is better for
-     * performance.
-     * Following this guide:
-     *                  https://www.dsprelated.com/showarticle/191.php
-     *
-     * To make indexing easier, After the convolution outputs I'll split
-     * the first row and all the rest into two separate arrays.
-     */
+    int samp_per_section = x.size() / section;
+    std::vector<std::vector<float> > out(section, std::vector<float>(samp_per_section));
 
-    // TODO: don't hardcode decimation value
-    std::vector<std::vector<float>> sections(50);
-
-    sections[0] = conv(x[0], h[0]);  // The first one is handled differently
-    for (size_t conv_num = 1; conv_num < 50; conv_num++)
+    int cntr = 0;
+    for (auto &row : out)
     {
-        sections[conv_num] = conv(x[50-conv_num], fir[conv_num]);
-    }
-
-    y[0] = sections[0][0];
-    for (size_t i = 1; i < 2622; i++)
-    {
-        sum = sections[0][i];  // accumulate this for y[i]
-        for (size_t j = 0; j < 50-1; j++)
+        for (int i = 0; i < samp_per_section; i++)
         {
-            sum += sections[j][i-1];
+            row[i] = x[cntr];
+            cntr += 1;
         }
-        y[i] = sum;
     }
+
+    return out;
 }
 
-std::vector<float> conv(const std::vector<float> &x, const std::vector<float> &h)
+std::vector<float> conv(const std::vector<float> &x,
+                        const std::vector<float> &h)
 {
     /*
      * Hand-rolling a convolution function because why not add the worry of not
@@ -516,18 +553,20 @@ std::vector<float> conv(const std::vector<float> &x, const std::vector<float> &h
     std::vector<float> h_pad(h_pad_size, 0);
     std::vector<float> y(N, 0);
 
-    std::copy(h.begin(), h.begin() + M, // src start and end slices
-              h_pad.begin() + N - 1); // zero pad b by N-1
-                                      // zeros on either side
+    // zero pad h into h_pad
+    for (size_t i=N; i < N + M; i++){
+        h_pad[i] = h[i - N];
+    }
 
     std::reverse(h_pad.begin(), h_pad.end()); // reverse second arr before conv
 
-    for (size_t i = 0; i < N; i++)
+
+    for (size_t j = 0; j < N; j++)
     {
-        int start = h_pad_size - N - i;
-        for (size_t j = 0; j < N; j++)
+        int start = h_pad_size - N - j;
+        for (size_t k = 0; k < N; k++)
         {
-            y[i] += x[j] * h_pad[start + j];
+            y[j] += x[k] * h_pad[start + k];
         }
     }
 
