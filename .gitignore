@@ -11,4 +11,11 @@ wheels/
 
 # Project files
 assets/
-*.wav
+*.wav*
+TODO.md
+*f32
+*sc8
+*cs8
+*cf32
+*fc32
+*tmp*

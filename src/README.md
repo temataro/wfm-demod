@@ -1,3 +1,20 @@
+# WFM Radio Receiver
+
+## Working the radio
+Run `make` and `./main`
+
+The RF chain looks like this
+
+```
++---------+    +---------+    +---------+
+| ANTENNA +--->+   LNA   +----+ RTLSDR  |
++---------+    +---------+    +---------+
+```
+
+In Abu Dhabi, I was able to receive 106.00MHz from my apartment using any
+old antenna with no amplification. But to get some other stations, I had
+to switch to a dipole + LNA. This is the [LNA I got from AliExpress](https://aliexpress.com/item/1005008817399812.html).
+
 ## Using `gnuplotpp.hpp`
 
 When doing algorithm prototyping in Python it's easy to quickly plot
