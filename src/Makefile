@@ -56,4 +56,4 @@ sharp:
 	clang-format -i *.cpp
 
 clean:
-	rm *cf32 *wav *sc8 *cs8 *f32 *pcm
+	rm -f *cf32 *wav *sc8 *cs8 *f32 *pcm

@@ -42,7 +42,7 @@
 
 #include "constants.hpp"
 // clang-format off
-#define DEFAULT_FC          100'500'000 // 106 MHz (Radio Two)
+#define DEFAULT_FC          106'000'000 // 106 MHz (Radio Two)
 #define DEFAULT_SR          2'400'000   // 2.4 MSPS
 #define DEFAULT_GAIN        0           // auto-gain
 #define READ_SIZE           0x01 << 18  // 262,144 samples
@@ -265,7 +265,7 @@ void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
     read_to_vec(buf, len, iq);
     // ARR_PRINT(iq);
 
-    size_t samp_written = fwrite(buf, 1, len, sdr_ctx->fp);
+    size_t samp_written = 0; // fwrite(buf, 1, len, sdr_ctx->fp);
 
     std::vector<float> angle_diff = phase_diff_wrapped(iq);
 
@@ -329,14 +329,15 @@ void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
     }
     /* *** --- *** */
 
-    save_interleaved_cf32(iq, "out.cf32");
-    save_floats(angle_diff, "angle_diffs.f32");
-    save_floats(angle_diff_lpf, "angle_diff_lpf.f32");
-    if (samp_written < len)
-    {
-        ERR_PRINT("Expected to write %u samples but only wrote %zu!", len,
-                  samp_written);
-    }
+    // save_interleaved_cf32(iq, "out.cf32");
+    // save_floats(angle_diff, "angle_diffs.f32");
+    // save_floats(angle_diff_lpf, "angle_diff_lpf.f32");
+
+    // if (samp_written < len)
+    // {
+    //     ERR_PRINT("Expected to write %u samples but only wrote %zu!", len,
+    //               samp_written);
+    // }
     sdr_ctx->sample_counter += samp_written;
 
     // END OF CB  -- Cleanup and profiling
