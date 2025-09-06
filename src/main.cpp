@@ -329,9 +329,10 @@ void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
     }
     /* *** --- *** */
 
-    save_interleaved_cf32(iq, "out.cf32");
-    save_floats(angle_diff, "angle_diffs.f32");
-    save_floats(angle_diff_lpf, "angle_diff_lpf.f32");
+    // save_interleaved_cf32(iq, "out.cf32");
+    // save_floats(angle_diff, "angle_diffs.f32");
+    // save_floats(angle_diff_lpf, "angle_diff_lpf.f32");
+
     if (samp_written < len)
     {
         ERR_PRINT("Expected to write %u samples but only wrote %zu!", len,
