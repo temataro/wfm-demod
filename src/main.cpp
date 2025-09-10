@@ -93,6 +93,7 @@ typedef struct
     FILE *fp;
     FILE *benchmark_fp;
     pa_simple *s;
+    rtlsdr_dev_t *device;
 } sdr_ctx_t;
 
 void rtl_cb(unsigned char *buf, uint32_t len, void *ctx);
@@ -162,7 +163,7 @@ int main(int argc, char **argv)
     char serial[256] = {0};
     r = rtlsdr_get_device_usb_strings(0, manufact, product, serial);
 
-    INFO_PRINT("\n\n====\nDevice details: %d, \n"
+    INFO_PRINT("====\nDevice details: %d, \n"
                "Manufacturer: %s,\n"
                "Product: %s,\n"
                "Serial: %s\n====\n",
@@ -207,6 +208,7 @@ int main(int argc, char **argv)
         ERR_PRINT("Error opening file! Terminating.");
     }
     sdr_ctx.benchmark_fp = benchmark_fp;
+    sdr_ctx.device = dev;
 
     // pulse audio device
     static const pa_sample_spec ss = {.format = PA_SAMPLE_S16LE,
