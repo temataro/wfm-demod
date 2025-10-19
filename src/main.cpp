@@ -38,29 +38,35 @@
 #include <pulse/simple.h>
 #include <pulse/error.h>
 #include <rtl-sdr.h>
-#include <time.h>
+#include <ctime>
 
 #include "constants.hpp"
+
 // clang-format off
-#define DEFAULT_FC          106'000'000 // 106 MHz (Radio Two)
-#define DEFAULT_SR          2'400'000   // 2.4 MSPS
-#define DEFAULT_GAIN        0           // auto-gain
-#define READ_SIZE           0x01 << 18  // 262,144 samples
+namespace defaults
+{
+    constexpr uint16_t DEFAULT_FC       = 106'000'000; // 106 MHz (Radio Two)
+    constexpr uint16_t DEFAULT_SR       = 2'400'000; // 2.4 MSPS
+    constexpr uint16_t DEFAULT_GAIN     = 0; // auto-gain
+    constexpr uint16_t READ_SIZE        = 0x01 << 18; // 262;144 samples
 
-#define FULL_SCALE_AUDIO    32768.f
-#define NUM_AUDIO_CHAN      1
-#define AUDIO_SR            48000
-#define AUDIO_VOLUME        70.0f/100.f
+    constexpr float FULL_SCALE_AUDIO    = 32768.f;
+    constexpr float AUDIO_VOLUME        = 70.0f / 100.f; // 70%
+    constexpr uint16_t NUM_AUDIO_CHAN   = 1;
+    constexpr uint16_t AUDIO_SR         = 48'000;
 
+    constexpr float PI                  = 3.1415926535898f;
+} // namespace defaults
+
+using namespace defaults;
 /* Convenience macros */
-#define RED                 "\033[31m"
-#define GREEN               "\033[32m"
-#define BLUE                "\033[34m"
-#define RESET               "\033[0m"
-#define PI                  3.1415926535898f
-#define RAD2DEG             180 / PI
-#define DEG2RAD             PI / 180
+#define RED                                "\033[31m"
+#define GREEN                              "\033[32m"
+#define BLUE                               "\033[34m"
+#define RESET                              "\033[0m"
 // clang-format on
+
+using cf32 = std::complex<float>;
 
 #define APPEND_FLAG std::ios::app // For fstream file writing operations
 
@@ -82,7 +88,6 @@ const size_t decimation_value = DEFAULT_SR / AUDIO_SR;
            elt.real(), elt.imag(), \
            LINE_BREAKS[e % NUM_ELTS_PER_LINE].c_str())
 
-typedef std::complex<float> cf32;
 /* --- */
 
 /* Prototype jail */
@@ -102,47 +107,13 @@ void save_interleaved_cf32(const std::vector<cf32> &iq,
                            const std::string &filename);
 void save_floats(const std::vector<float> &sig, const std::string &filename);
 std::vector<float> phase_diff_wrapped(const std::vector<cf32> &iq);
-std::vector<float> conv(const std::vector<float> &x, const std::vector<float> &h);
+std::vector<float> conv(const std::vector<float> &x,
+                        const std::vector<float> &h);
+std::vector<float> gptconvolve(const std::vector<float> &a,
+                               const std::vector<float> &b);
 /* --- */
 
-std::vector<float> gptconvolve(const std::vector<float> &a,
-                               const std::vector<float> &b)
-{
-    size_t n = a.size();
-    size_t m = b.size();
-    std::vector<float> result(n + m - 1, 0.0f);
-
-    for (size_t u = 0; u < n; ++u)
-        for (size_t v = 0; v < m; ++v)
-            result[u + v] += a[u] * b[v];
-
-    return result;
-}
-
-void test_convs()
-{
-    std::vector<float> x(12);
-    std::vector<float> h(3);
-
-    for (int i = 0; i < 12; i++)
-    {
-        x[i] = i;
-        h[i % 3] = i;
-    }
-
-    std::vector<float> myconv = conv(x, h);
-    std::vector<float> gptconv = gptconvolve(x, h);
-
-    for (size_t i = 0; i < myconv.size(); i++)
-    {
-        printf("%.2f ", myconv[i]);
-    }
-    printf("\n\nGPT_CONV: \n\n");
-    for (size_t i = 0; i < gptconv.size(); i++)
-    {
-        printf("%.2f ", gptconv[i]);
-    }
-}
+constexpr uint8_t SAVE_TO_DISK = 0;
 
 int main(int argc, char **argv)
 {
@@ -183,8 +154,8 @@ int main(int argc, char **argv)
     rtlsdr_set_tuner_gain_mode(dev, DEFAULT_GAIN == 0 ? 0 : 1);
     rtlsdr_set_tuner_gain(dev, DEFAULT_GAIN);
 
-    INFO_PRINT("Tuned to %.2f MHz. Sample rate: %.2f MSps.", DEFAULT_FC / 1e6,
-               DEFAULT_SR / 1e6);
+    INFO_PRINT("Attempting to tune to %.2f MHz @ sample rate: %.2f MSps.",
+               DEFAULT_FC / 1e6, DEFAULT_SR / 1e6);
     /* --- */
 
     /* Reset endpoint before we start reading from it (mandatory) */
@@ -331,16 +302,19 @@ void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
     }
     /* *** --- *** */
 
-    // save_interleaved_cf32(iq, "out.cf32");
-    // save_floats(angle_diff, "angle_diffs.f32");
-    // save_floats(angle_diff_lpf, "angle_diff_lpf.f32");
+    if (SAVE_TO_DISK)
+    {
+        save_interleaved_cf32(iq, "out.cf32");
+        // save_floats(angle_diff, "angle_diffs.f32");
+        // save_floats(angle_diff_lpf, "angle_diff_lpf.f32");
 
-    // if (samp_written < len)
-    // {
-    //     ERR_PRINT("Expected to write %u samples but only wrote %zu!", len,
-    //               samp_written);
-    // }
-    sdr_ctx->sample_counter += samp_written;
+        if (samp_written < len)
+        {
+            ERR_PRINT("Expected to write %u samples but only wrote %zu!", len,
+                      samp_written);
+        }
+        sdr_ctx->sample_counter += samp_written;
+    }
 
     // END OF CB  -- Cleanup and profiling
     clock_t time = clock();
@@ -523,4 +497,43 @@ std::vector<float> conv(const std::vector<float> &x,
     }
 
     return y;
+}
+
+std::vector<float> gptconvolve(const std::vector<float> &a,
+                               const std::vector<float> &b)
+{
+    size_t n = a.size();
+    size_t m = b.size();
+    std::vector<float> result(n + m - 1, 0.0f);
+
+    for (size_t u = 0; u < n; ++u)
+        for (size_t v = 0; v < m; ++v)
+            result[u + v] += a[u] * b[v];
+
+    return result;
+}
+
+void test_convs()
+{
+    std::vector<float> x(12);
+    std::vector<float> h(3);
+
+    for (int i = 0; i < 12; i++)
+    {
+        x[i] = i;
+        h[i % 3] = i;
+    }
+
+    std::vector<float> myconv = conv(x, h);
+    std::vector<float> gptconv = gptconvolve(x, h);
+
+    for (size_t i = 0; i < myconv.size(); i++)
+    {
+        printf("%.2f ", myconv[i]);
+    }
+    printf("\n\nGPT_CONV: \n\n");
+    for (size_t i = 0; i < gptconv.size(); i++)
+    {
+        printf("%.2f ", gptconv[i]);
+    }
 }
