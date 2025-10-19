@@ -17,11 +17,11 @@ from scipy.io.wavfile import write
 plt.style.use("./computermodern.mplstyle")
 
 DBG_PLT: bool = False
-if '--dbg' in sys.argv:
+if "--dbg" in sys.argv:
     DBG_PLT = True
 
 # constants
-fs: float = 1.92e6  # samplerate, Hz
+fs: float = 2.4e6  # samplerate, Hz
 dt: float = 1 / fs
 wfm_bandwidth: float = 100e3
 
@@ -55,9 +55,7 @@ def read_iq(
             sig = sig[:, 0] + 1j * sig[:, 1]
 
         elif ".sc8" in filename or ".cs8" in filename:
-            sig = np.fromfile(
-                file, dtype=np.int8, count=samples_IQ, offset=offset
-            )
+            sig = np.fromfile(file, dtype=np.int8, count=samples_IQ, offset=offset)
             ftype = "sc8"
 
             sig = sig.reshape(sig.size // 2, 2)
@@ -221,13 +219,12 @@ def main() -> None:
 
     infile: str = sys.argv[1]
     sig = read_iq(infile)
-    sig = sp.signal.resample_poly(sig, up=1, down=10, window=("kaiser", 8.6))
-    # fm_filt = center_transmission(fm, fc=-700e3)
-    fc: float = 0  # Hz
-    fm_filt: npt.NDArray = center_transmission(sig, fc=fc)
 
-    sig = demod_fm(fm_filt)
-    save_to_wav(sig, infile + f"-{fc//1e3}KHz.wav")
+    f, Pxx = sp.signal.welch(
+        sig, fs=fs, nperseg=2**15, return_onesided=False, window="hamming"
+    )
+    plt.semilogy(f, Pxx)
+    plt.show()
 
 
 if __name__ == "__main__":
