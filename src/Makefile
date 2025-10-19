@@ -1,6 +1,6 @@
-CXXFLAGS=-Wall -Wextra
+CXXFLAGS=-Wall -Wextra -Wno-missing-field-initializers
 CPPSTD=c++23
-LIBS=-lrtlsdr -lm -lpulse-simple -lpulse
+LIBS=-lrtlsdr -lm -lpulse-simple -lpulse -lXrandr -lX11 -lGL
 OPTS=-march=native -ffast-math -O2
 
 .PHONY: all clean
@@ -9,7 +9,10 @@ all: main
 
 %: %.cpp
 	clang++ $(CXXFLAGS) -std=$(CPPSTD) $< -o $@ $(LIBS) $(OPTS)
-	./$@ out.iq
+	./$@
+
+%: %.cu
+	nvcc $< -o $@
 
 inspect:
 	inspectrum *cf32
