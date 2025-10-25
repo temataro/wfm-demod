@@ -38,6 +38,7 @@
 
 void rtl_cb(unsigned char* buf, uint32_t len, void* ctx);
 
+bool SAVE_TO_DISK = 0;
 int main(int argc, char** argv) {
     (void)argc;
     rtlsdr_dev_t* dev = nullptr;
@@ -136,22 +137,10 @@ void rtl_cb(unsigned char* buf, uint32_t len, void* ctx) {
     read_to_vec(buf, len, iq);
     // ARR_PRINT(iq);
 
-    size_t samp_written = 0; // fwrite(buf, 1, len, sdr_ctx->fp);
 
     std::vector<float> angle_diff = phase_diff_wrapped(iq);
 
-    /* Play out through pulseaudio
-     * We have 2^18 samples that we'll chunk into 2^10 sized sections
-     * (Thereby giving us READ_SIZE / len_audio_buffer = 2^8=64 sections)
-     * For each section we'll index into angle_diff at a different start and
-     * end point so we get 1024 fresh sections in the buffer.
-     *
-     * We're recording at 2.4MSps, not playing back at the same rate
-     * For now we'll do a 'naive' decimation where I'll just take one every
-     * 50 every samples. Later, we'll want to polyphase resample by the same
-     * decimation value.
-     */
-
+    /* Note 1 */
     const size_t len_audio_buffer = 2622; // 2622 * 50 = 131,100 -- roughly
                                           // how many samples we get from the
                                           // SDR callback at once...
@@ -197,16 +186,20 @@ void rtl_cb(unsigned char* buf, uint32_t len, void* ctx) {
     }
     /* *** --- *** */
 
-    // save_interleaved_cf32(iq, "out.cf32");
-    // save_floats(angle_diff, "angle_diffs.f32");
-    // save_floats(angle_diff_lpf, "angle_diff_lpf.f32");
+#if SAVE_TO_DISK
+    size_t samp_written = 0;
+    fwrite(buf, 1, len, sdr_ctx->fp);
+    save_interleaved_cf32(iq, "out.cf32");
+    save_floats(angle_diff, "angle_diffs.f32");
+    save_floats(angle_diff_lpf, "angle_diff_lpf.f32");
 
-    // if (samp_written < len)
-    // {
-    //     ERR_PRINT("Expected to write %u samples but only wrote %zu!", len,
-    //               samp_written);
-    // }
+    if (samp_written < len)
+    {
+        ERR_PRINT("Expected to write %u samples but only wrote %zu!", len,
+                  samp_written);
+    }
     sdr_ctx->sample_counter += samp_written;
+#endif
 
     // END OF CB  -- Cleanup and profiling
     clock_t time = clock();
@@ -221,3 +214,16 @@ void rtl_cb(unsigned char* buf, uint32_t len, void* ctx) {
     fprintf(stderr, "[STATUS] Took %.5f ns to process. Wrote %lu samples.\r",
             proc_time, sdr_ctx->sample_counter);
 }
+/*
+     NOTES:
+     1. Play out through pulseaudio
+     We have 2^18 samples that we'll chunk into 2^10 sized sections
+     (Thereby giving us READ_SIZE / len_audio_buffer = 2^8=64 sections)
+     For each section we'll index into angle_diff at a different start and
+     end point so we get 1024 fresh sections in the buffer.
+
+     We're recording at 2.4MSps, not playing back at the same rate
+     For now we'll do a 'naive' decimation where I'll just take one every
+     50 every samples. Later, we'll want to polyphase resample by the same
+     decimation value.
+ */
