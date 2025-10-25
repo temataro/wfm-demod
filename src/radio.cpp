@@ -119,6 +119,7 @@ int main(int argc, char** argv) {
                       0,        // buf_num
                       READ_SIZE // buf_len
     );
+
     pa_simple_drain(s, NULL);
     pa_simple_free(s);
 
@@ -137,10 +138,9 @@ void rtl_cb(unsigned char* buf, uint32_t len, void* ctx) {
     read_to_vec(buf, len, iq);
     // ARR_PRINT(iq);
 
-
     std::vector<float> angle_diff = phase_diff_wrapped(iq);
 
-    /* Note 1 */
+    /* Note 2 */
     const size_t len_audio_buffer = 2622; // 2622 * 50 = 131,100 -- roughly
                                           // how many samples we get from the
                                           // SDR callback at once...
@@ -166,17 +166,7 @@ void rtl_cb(unsigned char* buf, uint32_t len, void* ctx) {
         i += 1;
     }
 
-    /*
-    Goal is to eventually get to
-
-    float audio_buffer_f[len_audio_buffer];
-    angle_diff.resize(131100, 0.0f); // zero pad to get to % 50 == 0
-    polyphase_resample(fir_taps, angle_diff, audio_buffer_f);
-
-    to avoid wasting 49/50 of the samples we LPF'd
-
-    for now just decimate after collecting.
-    */
+    /* Note 1 */
 
     int error;
     if (pa_simple_write(sdr_ctx->s, audio_buffer,
@@ -187,14 +177,14 @@ void rtl_cb(unsigned char* buf, uint32_t len, void* ctx) {
     /* *** --- *** */
 
 #if SAVE_TO_DISK
+    INFO_PRINT("Saving to disk.\n");
     size_t samp_written = 0;
     fwrite(buf, 1, len, sdr_ctx->fp);
     save_interleaved_cf32(iq, "out.cf32");
     save_floats(angle_diff, "angle_diffs.f32");
     save_floats(angle_diff_lpf, "angle_diff_lpf.f32");
 
-    if (samp_written < len)
-    {
+    if (samp_written < len) {
         ERR_PRINT("Expected to write %u samples but only wrote %zu!", len,
                   samp_written);
     }
@@ -216,14 +206,22 @@ void rtl_cb(unsigned char* buf, uint32_t len, void* ctx) {
 }
 /*
      NOTES:
-     1. Play out through pulseaudio
-     We have 2^18 samples that we'll chunk into 2^10 sized sections
-     (Thereby giving us READ_SIZE / len_audio_buffer = 2^8=64 sections)
-     For each section we'll index into angle_diff at a different start and
-     end point so we get 1024 fresh sections in the buffer.
+    1. Goal is to eventually get to
+    float audio_buffer_f[len_audio_buffer];
+    angle_diff.resize(131100, 0.0f); // zero pad to get to % 50 == 0
+    polyphase_resample(fir_taps, angle_diff, audio_buffer_f);
 
-     We're recording at 2.4MSps, not playing back at the same rate
-     For now we'll do a 'naive' decimation where I'll just take one every
-     50 every samples. Later, we'll want to polyphase resample by the same
-     decimation value.
+    to avoid wasting 49/50 of the samples we LPF'd
+    for now just decimate after collecting.
+
+    2. Play out through pulseaudio
+    We have 2^18 samples that we'll chunk into 2^10 sized sections
+    (Thereby giving us READ_SIZE / len_audio_buffer = 2^8=64 sections)
+    For each section we'll index into angle_diff at a different start and
+    end point so we get 1024 fresh sections in the buffer.
+
+    We're recording at 2.4MSps, not playing back at the same rate
+    For now we'll do a 'naive' decimation where I'll just take one every
+    50 every samples. Later, we'll want to polyphase resample by the same
+    decimation value.
  */
