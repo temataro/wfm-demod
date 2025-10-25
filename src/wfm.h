@@ -11,9 +11,9 @@
 
 /* Convenience macros */
 #define RED                 "\033[31m"
-#define GREEN               "\033[32m"
-#define BLUE                "\033[34m"
-#define RESET               "\033[0m"
+#define GRN                 "\033[32m"
+#define BLU                 "\033[34m"
+#define RST                 "\033[0m"
 #define PI                  3.1415926535898f
 #define RAD2DEG             180 / PI
 #define DEG2RAD             PI / 180
@@ -23,10 +23,10 @@
 
 // Macros for colored fprintf
 #define ERR_PRINT(fmt, ...)                                                    \
-    fprintf(stderr, RED "[FATAL] " fmt RESET "\n", ##__VA_ARGS__)
+    fprintf(stderr, RED "[FATAL] " fmt RST "\n", ##__VA_ARGS__)
 
 #define INFO_PRINT(fmt, ...)                                                   \
-    fprintf(stdout, GREEN "[INFO] " fmt RESET "\n", ##__VA_ARGS__)
+    fprintf(stdout, GRN "[INFO] " fmt RST "\n", ##__VA_ARGS__)
 
 std::vector<std::string> LINE_BREAKS = {"\t", "\t", "\t", "\t", "\t", "\n"};
 const size_t NUM_ELTS_PER_LINE = LINE_BREAKS.size();
@@ -34,8 +34,8 @@ const size_t decimation_value = DEFAULT_SR / AUDIO_SR;
 
 #define ARR_PRINT(arr)                                                         \
     for (auto [e, elt] : std::views::enumerate(arr))                           \
-    printf(BLUE "(%+2.4f, %+2.4f)"                                             \
-                "%s" RESET,                                                    \
+    printf(BLU "(%+2.4f, %+2.4f)"                                             \
+                "%s" RST,                                                    \
            elt.real(), elt.imag(), LINE_BREAKS[e % NUM_ELTS_PER_LINE].c_str())
 
 typedef std::complex<float> cf32;
@@ -50,6 +50,13 @@ typedef struct {
     pa_simple* s;
     rtlsdr_dev_t* device;
 } sdr_ctx_t;
+
+typedef struct {
+    uint64_t fc;
+    uint64_t fs;
+    int g;
+    void* argvs;
+} radio_params_t;
 
 void read_to_vec(unsigned char* buf, uint32_t len, std::vector<cf32>& iq);
 void save_interleaved_cf32(const std::vector<cf32>& iq,

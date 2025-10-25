@@ -38,29 +38,40 @@
 #include "wfm.h"
 
 void rtl_cb(unsigned char* buf, uint32_t len, void* ctx);
-void* run_radio(void* argv);
+void* run_radio(void* args);
+void* control_radio(void* args);
 
 bool SAVE_TO_DISK = 0;
 int main(int argc, char** argv) {
     (void)argc;
-    void* radio_args = (void*) argv;
-    pthread_t radio_thread;
 
-    pthread_create(&radio_thread, NULL, run_radio, radio_args);
+    radio_params_t radio_params;
+    radio_params.fc = DEFAULT_FC;
+    radio_params.fs = DEFAULT_SR;
+    radio_params.g  = DEFAULT_GAIN;
+    radio_params.argvs =  (void*) argv;
+
+    pthread_t radio_thread;
+    // pthread_t control_thread;
+
+    pthread_create(&radio_thread, NULL, run_radio, (void*)&radio_params);
+    // pthread_create(&control_thread, NULL, control_radio, (void*)radio_params);
     pthread_join(radio_thread, NULL);
+    // pthread_join(control_thread, NULL);
 
     return 0;
 }
 
-void* run_radio(void* argv) {
-    rtlsdr_dev_t* dev = nullptr;
-    char** args = static_cast<char**>(argv);
-    char* outfile = args[1];
+void* run_radio(void* args) {
+    radio_params_t* radio_params = (radio_params_t*)(args);
+    char** argvs = (char**)(radio_params->argvs);
+    char* outfile = argvs[1];
 
     if (strcmp(outfile, "") == 0) {
-        ERR_PRINT("Input file not provided. Defaulting output to out.iq");
+        ERR_PRINT("Input file not provided. Defaulting output to out.iq\n");
     }
 
+    rtlsdr_dev_t* dev = nullptr;
     /* --- Check device for lice and ticks */
     int device_index = 0;
     int r;
@@ -69,10 +80,10 @@ void* run_radio(void* argv) {
     char serial[256] = {0};
     r = rtlsdr_get_device_usb_strings(0, manufact, product, serial);
 
-    INFO_PRINT("====\nDevice details: %d, \n"
+    fprintf(stderr, GRN "====\nDevice details: %d,\n===\n" RST
                "Manufacturer: %s,\n"
                "Product: %s,\n"
-               "Serial: %s\n====\n",
+               "Serial: %s\n====\n\n",
                r, manufact, product, serial);
 
     r = rtlsdr_open(&dev, device_index);
@@ -84,10 +95,10 @@ void* run_radio(void* argv) {
     /* --- */
 
     /* --- Configure device */
-    rtlsdr_set_center_freq(dev, DEFAULT_FC);
-    rtlsdr_set_sample_rate(dev, DEFAULT_SR);
-    rtlsdr_set_tuner_gain_mode(dev, DEFAULT_GAIN == 0 ? 0 : 1);
-    rtlsdr_set_tuner_gain(dev, DEFAULT_GAIN);
+    rtlsdr_set_center_freq(dev, radio_params->fc);
+    rtlsdr_set_sample_rate(dev, radio_params->fs);
+    rtlsdr_set_tuner_gain_mode(dev, radio_params->g == 0 ? 0 : 1);
+    rtlsdr_set_tuner_gain(dev, radio_params->g);
 
     INFO_PRINT("Tuned to %.2f MHz. Sample rate: %.2f MSps.", DEFAULT_FC / 1e6,
                DEFAULT_SR / 1e6);
