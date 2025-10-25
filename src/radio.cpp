@@ -26,6 +26,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <pthread.h>
 #include <pulse/error.h>
 #include <pulse/simple.h>
 #include <ranges>
@@ -37,13 +38,18 @@
 #include "wfm.h"
 
 void rtl_cb(unsigned char* buf, uint32_t len, void* ctx);
+void* run_radio(char** argv);
 
 bool SAVE_TO_DISK = 0;
 int main(int argc, char** argv) {
     (void)argc;
+    run_radio(argv);
+
+    return 0;
+}
+
+void* run_radio(char** argv) {
     rtlsdr_dev_t* dev = nullptr;
-    int device_index = 0;
-    int r;
     char* outfile = argv[1];
 
     if (strcmp(outfile, "") == 0) {
@@ -51,6 +57,8 @@ int main(int argc, char** argv) {
     }
 
     /* --- Check device for lice and ticks */
+    int device_index = 0;
+    int r;
     char manufact[256] = {0};
     char product[256] = {0};
     char serial[256] = {0};
@@ -65,8 +73,9 @@ int main(int argc, char** argv) {
     r = rtlsdr_open(&dev, device_index);
     if (r < 0) {
         ERR_PRINT("Failed to open RTL-SDR device #%d", device_index);
-        return EXIT_FAILURE;
+        return nullptr;
     }
+
     /* --- */
 
     /* --- Configure device */
@@ -127,7 +136,7 @@ int main(int argc, char** argv) {
     fclose(sdr_ctx.fp);
     fclose(sdr_ctx.benchmark_fp);
 
-    return EXIT_SUCCESS;
+    return nullptr;
 }
 
 void rtl_cb(unsigned char* buf, uint32_t len, void* ctx) {
