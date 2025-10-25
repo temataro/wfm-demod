@@ -41,6 +41,14 @@ void rtl_cb(unsigned char* buf, uint32_t len, void* ctx);
 void* run_radio(void* args);
 void* control_radio(void* args);
 
+pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+int pending_retune = 1; // The atomic we want to secure with the mutex lock
+/*
+ pthread_mutex_lock(&lock);
+ // Operate on pending_retune inside.
+ pthread_mutex_unlock(&lock);
+*/
+
 bool SAVE_TO_DISK = 0;
 int main(int argc, char** argv) {
     (void)argc;
@@ -48,18 +56,28 @@ int main(int argc, char** argv) {
     radio_params_t radio_params;
     radio_params.fc = DEFAULT_FC;
     radio_params.fs = DEFAULT_SR;
-    radio_params.g  = DEFAULT_GAIN;
-    radio_params.argvs =  (void*) argv;
+    radio_params.g = DEFAULT_GAIN;
+    radio_params.argvs = (void*)argv;
 
     pthread_t radio_thread;
-    // pthread_t control_thread;
+    pthread_t control_thread;
 
     pthread_create(&radio_thread, NULL, run_radio, (void*)&radio_params);
-    // pthread_create(&control_thread, NULL, control_radio, (void*)radio_params);
+    pthread_create(&control_thread, NULL, control_radio, (void*)&radio_params);
     pthread_join(radio_thread, NULL);
-    // pthread_join(control_thread, NULL);
+    pthread_join(control_thread, NULL);
 
     return 0;
+}
+
+void* control_radio(void* args) {
+    //
+    for (;;) {
+        // Just retune every 4 seconds for now
+        sleep(4);
+        fprintf(stderr, "Finished a sleep. :) \n");
+        fflush(stderr);
+    }
 }
 
 void* run_radio(void* args) {
@@ -80,11 +98,11 @@ void* run_radio(void* args) {
     char serial[256] = {0};
     r = rtlsdr_get_device_usb_strings(0, manufact, product, serial);
 
-    fprintf(stderr, GRN "====\nDevice details: %d,\n===\n" RST
-               "Manufacturer: %s,\n"
-               "Product: %s,\n"
-               "Serial: %s\n====\n\n",
-               r, manufact, product, serial);
+    fprintf(stderr,
+            GRN "====\nDevice details: %d,\n===\n" RST "Manufacturer: %s,\n"
+                "Product: %s,\n"
+                "Serial: %s\n====\n\n",
+            r, manufact, product, serial);
 
     r = rtlsdr_open(&dev, device_index);
     if (r < 0) {
