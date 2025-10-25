@@ -23,10 +23,10 @@
 
 // Macros for colored fprintf
 #define ERR_PRINT(fmt, ...)                                                    \
-    fprintf(stderr, RED "[FATAL]" fmt RESET "\n", ##__VA_ARGS__)
+    fprintf(stderr, RED "[FATAL] " fmt RESET "\n", ##__VA_ARGS__)
 
 #define INFO_PRINT(fmt, ...)                                                   \
-    fprintf(stdout, GREEN "[INFO]" fmt RESET "\n", ##__VA_ARGS__)
+    fprintf(stdout, GREEN "[INFO] " fmt RESET "\n", ##__VA_ARGS__)
 
 std::vector<std::string> LINE_BREAKS = {"\t", "\t", "\t", "\t", "\t", "\n"};
 const size_t NUM_ELTS_PER_LINE = LINE_BREAKS.size();

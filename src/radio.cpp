@@ -76,11 +76,11 @@ int main(int argc, char** argv) {
 
     INFO_PRINT("Tuned to %.2f MHz. Sample rate: %.2f MSps.", DEFAULT_FC / 1e6,
                DEFAULT_SR / 1e6);
-    /* --- */
 
     /* Reset endpoint before we start reading from it (mandatory) */
     rtlsdr_reset_buffer(dev);
     INFO_PRINT("Buffer reset successfully!");
+    /* --- */
 
     /* Populate sdr_ctx_t */
     sdr_ctx_t sdr_ctx;
