@@ -25,22 +25,22 @@
 // Decimate function to increase SNR
 // Integrate ggplot graphing IQ data/Constellation diagrams
 
-#include <iostream>
+#include <algorithm>
+#include <cassert>
+#include <complex>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <complex>
-#include <vector>
-#include <algorithm>
-#include <ranges>
 #include <fstream>
-#include <cassert>
-#include <pulse/simple.h>
+#include <iostream>
 #include <pulse/error.h>
+#include <pulse/simple.h>
+#include <ranges>
 #include <rtl-sdr.h>
 #include <time.h>
+#include <vector>
 
-#include "constants.hpp"
+#include "utils/constants.hpp"
 // clang-format off
 #define DEFAULT_FC          106'000'000 // 106 MHz (Radio Two)
 #define DEFAULT_SR          2'400'000   // 2.4 MSPS
@@ -65,49 +65,47 @@
 #define APPEND_FLAG std::ios::app // For fstream file writing operations
 
 // Macros for colored fprintf
-#define ERR_PRINT(fmt, ...) \
+#define ERR_PRINT(fmt, ...)                                                    \
     fprintf(stderr, RED "[FATAL]" fmt RESET "\n", ##__VA_ARGS__)
 
-#define INFO_PRINT(fmt, ...) \
+#define INFO_PRINT(fmt, ...)                                                   \
     fprintf(stdout, GREEN "[INFO]" fmt RESET "\n", ##__VA_ARGS__)
 
 std::vector<std::string> LINE_BREAKS = {"\t", "\t", "\t", "\t", "\t", "\n"};
 const size_t NUM_ELTS_PER_LINE = LINE_BREAKS.size();
 const size_t decimation_value = DEFAULT_SR / AUDIO_SR;
 
-#define ARR_PRINT(arr) \
-    for (auto [e, elt] : std::views::enumerate(arr)) \
-    printf(BLUE "(%+2.4f, %+2.4f)" \
-                "%s" RESET, \
-           elt.real(), elt.imag(), \
-           LINE_BREAKS[e % NUM_ELTS_PER_LINE].c_str())
+#define ARR_PRINT(arr)                                                         \
+    for (auto [e, elt] : std::views::enumerate(arr))                           \
+    printf(BLUE "(%+2.4f, %+2.4f)"                                             \
+                "%s" RESET,                                                    \
+           elt.real(), elt.imag(), LINE_BREAKS[e % NUM_ELTS_PER_LINE].c_str())
 
 typedef std::complex<float> cf32;
 /* --- */
 
 /* Prototype jail */
-typedef struct
-{
+typedef struct {
     uint64_t sample_counter;
     clock_t init_time;
-    FILE *fp;
-    FILE *benchmark_fp;
-    pa_simple *s;
-    rtlsdr_dev_t *device;
+    FILE* fp;
+    FILE* benchmark_fp;
+    pa_simple* s;
+    rtlsdr_dev_t* device;
 } sdr_ctx_t;
 
-void rtl_cb(unsigned char *buf, uint32_t len, void *ctx);
-void read_to_vec(unsigned char *buf, uint32_t len, std::vector<cf32> &iq);
-void save_interleaved_cf32(const std::vector<cf32> &iq,
-                           const std::string &filename);
-void save_floats(const std::vector<float> &sig, const std::string &filename);
-std::vector<float> phase_diff_wrapped(const std::vector<cf32> &iq);
-std::vector<float> conv(const std::vector<float> &x, const std::vector<float> &h);
+void rtl_cb(unsigned char* buf, uint32_t len, void* ctx);
+void read_to_vec(unsigned char* buf, uint32_t len, std::vector<cf32>& iq);
+void save_interleaved_cf32(const std::vector<cf32>& iq,
+                           const std::string& filename);
+void save_floats(const std::vector<float>& sig, const std::string& filename);
+std::vector<float> phase_diff_wrapped(const std::vector<cf32>& iq);
+std::vector<float> conv(const std::vector<float>& x,
+                        const std::vector<float>& h);
 /* --- */
 
-std::vector<float> gptconvolve(const std::vector<float> &a,
-                               const std::vector<float> &b)
-{
+std::vector<float> gptconvolve(const std::vector<float>& a,
+                               const std::vector<float>& b) {
     size_t n = a.size();
     size_t m = b.size();
     std::vector<float> result(n + m - 1, 0.0f);
@@ -119,13 +117,11 @@ std::vector<float> gptconvolve(const std::vector<float> &a,
     return result;
 }
 
-void test_convs()
-{
+void test_convs() {
     std::vector<float> x(12);
     std::vector<float> h(3);
 
-    for (int i = 0; i < 12; i++)
-    {
+    for (int i = 0; i < 12; i++) {
         x[i] = i;
         h[i % 3] = i;
     }
@@ -133,27 +129,23 @@ void test_convs()
     std::vector<float> myconv = conv(x, h);
     std::vector<float> gptconv = gptconvolve(x, h);
 
-    for (size_t i = 0; i < myconv.size(); i++)
-    {
+    for (size_t i = 0; i < myconv.size(); i++) {
         printf("%.2f ", myconv[i]);
     }
     printf("\n\nGPT_CONV: \n\n");
-    for (size_t i = 0; i < gptconv.size(); i++)
-    {
+    for (size_t i = 0; i < gptconv.size(); i++) {
         printf("%.2f ", gptconv[i]);
     }
 }
 
-int main(int argc, char **argv)
-{
+int main(int argc, char** argv) {
     (void)argc;
-    rtlsdr_dev_t *dev = nullptr;
+    rtlsdr_dev_t* dev = nullptr;
     int device_index = 0;
     int r;
-    char *outfile = argv[1];
+    char* outfile = argv[1];
 
-    if (strcmp(outfile, "") == 0)
-    {
+    if (strcmp(outfile, "") == 0) {
         ERR_PRINT("Input file not provided. Defaulting output to out.iq");
     }
 
@@ -170,8 +162,7 @@ int main(int argc, char **argv)
                r, manufact, product, serial);
 
     r = rtlsdr_open(&dev, device_index);
-    if (r < 0)
-    {
+    if (r < 0) {
         ERR_PRINT("Failed to open RTL-SDR device #%d", device_index);
         return EXIT_FAILURE;
     }
@@ -193,18 +184,16 @@ int main(int argc, char **argv)
 
     /* Populate sdr_ctx_t */
     sdr_ctx_t sdr_ctx;
-    FILE *fp = fopen("test.iq", "wb+");
-    if (!fp)
-    {
+    FILE* fp = fopen("test.iq", "wb+");
+    if (!fp) {
         ERR_PRINT("Error opening file! Terminating.");
     }
     sdr_ctx.fp = fp;
     sdr_ctx.sample_counter = 0;
     sdr_ctx.init_time = clock();
 
-    FILE *benchmark_fp = fopen("cb_bench.txt", "w+");
-    if (!benchmark_fp)
-    {
+    FILE* benchmark_fp = fopen("cb_bench.txt", "w+");
+    if (!benchmark_fp) {
         ERR_PRINT("Error opening file! Terminating.");
     }
     sdr_ctx.benchmark_fp = benchmark_fp;
@@ -214,19 +203,19 @@ int main(int argc, char **argv)
     static const pa_sample_spec ss = {.format = PA_SAMPLE_S16LE,
                                       .rate = AUDIO_SR,
                                       .channels = NUM_AUDIO_CHAN};
-    pa_simple *s = pa_simple_new(NULL, // Use default server
+    pa_simple* s = pa_simple_new(NULL,            // Use default server
                                  "WFM Demod App", // Application Name
                                  PA_STREAM_PLAYBACK,
-                                 NULL, // Use default device
+                                 NULL,        // Use default device
                                  "La Musica", // Description of stream
-                                 &ss, // Sample format
+                                 &ss,         // Sample format
                                  NULL, NULL,
                                  NULL // ignore error code
     );
     sdr_ctx.s = s;
 
     rtlsdr_read_async(dev, rtl_cb, &sdr_ctx,
-                      0, // buf_num
+                      0,        // buf_num
                       READ_SIZE // buf_len
     );
     pa_simple_drain(s, NULL);
@@ -239,9 +228,8 @@ int main(int argc, char **argv)
     return EXIT_SUCCESS;
 }
 
-void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
-{
-    sdr_ctx_t *sdr_ctx = (sdr_ctx_t *)ctx;
+void rtl_cb(unsigned char* buf, uint32_t len, void* ctx) {
+    sdr_ctx_t* sdr_ctx = (sdr_ctx_t*)ctx;
 
     // DSP
     std::vector<cf32> iq((int)len / 2);
@@ -280,8 +268,7 @@ void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
 
     float val;
     size_t i = 0;
-    while ((i < samples_to_decimate) && (i < len_audio_buffer))
-    {
+    while ((i < samples_to_decimate) && (i < len_audio_buffer)) {
         val = angle_diff_lpf[i * decimation_value];
         val /= PI;
         val *= (AUDIO_VOLUME * FULL_SCALE_AUDIO);
@@ -305,9 +292,7 @@ void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
     int error;
     if (pa_simple_write(sdr_ctx->s, audio_buffer,
                         len_audio_buffer * NUM_AUDIO_CHAN * sizeof(int16_t),
-                        &error)
-        < 0)
-    {
+                        &error) < 0) {
         ERR_PRINT("pa_simple_write: %s\n", pa_strerror(error));
     }
     /* *** --- *** */
@@ -337,18 +322,16 @@ void rtl_cb(unsigned char *buf, uint32_t len, void *ctx)
             proc_time, sdr_ctx->sample_counter);
 }
 
-void save_interleaved_cf32(const std::vector<cf32> &iq,
-                           const std::string &filename)
-{
+void save_interleaved_cf32(const std::vector<cf32>& iq,
+                           const std::string& filename) {
     std::ofstream ofs(filename, std::ios::binary | APPEND_FLAG);
 
-    for (auto &elt : iq)
-    {
+    for (auto& elt : iq) {
         float i = elt.real();
         float q = elt.imag();
 
-        ofs.write(reinterpret_cast<const char *>(&i), sizeof(float));
-        ofs.write(reinterpret_cast<const char *>(&q), sizeof(float));
+        ofs.write(reinterpret_cast<const char*>(&i), sizeof(float));
+        ofs.write(reinterpret_cast<const char*>(&q), sizeof(float));
         /*     basic_ostream& write( const char_type* s, std::streamsize count
          * ); s: char pointer to the first byte of the variable's address
          *     count: the number of bytes to copy over starting from the
@@ -365,24 +348,20 @@ void save_interleaved_cf32(const std::vector<cf32> &iq,
     }
 }
 
-void save_floats(const std::vector<float> &sig, const std::string &filename)
-{
+void save_floats(const std::vector<float>& sig, const std::string& filename) {
     std::ofstream ofs(filename, std::ios::binary | APPEND_FLAG);
-    for (auto &elt : sig)
-    {
-        ofs.write(reinterpret_cast<const char *>(&elt), sizeof(float));
+    for (auto& elt : sig) {
+        ofs.write(reinterpret_cast<const char*>(&elt), sizeof(float));
         ;
     }
 }
 
 /* DSP Functions */
-void read_to_vec(unsigned char *buf, uint32_t len, std::vector<cf32> &iq)
-{
+void read_to_vec(unsigned char* buf, uint32_t len, std::vector<cf32>& iq) {
     // Take a buffer and convert it to a std::complex vector
     float i_mean = 0;
     float q_mean = 0;
-    for (size_t i = 0; i < len / 2; i++)
-    {
+    for (size_t i = 0; i < len / 2; i++) {
         cf32 z{(float)buf[2 * i], (float)buf[2 * i + 1]};
         i_mean += z.real();
         q_mean += z.imag();
@@ -399,23 +378,18 @@ void read_to_vec(unsigned char *buf, uint32_t len, std::vector<cf32> &iq)
     /* --- */
 }
 
-std::vector<float> phase_diff_wrapped(const std::vector<cf32> &iq)
-{
+std::vector<float> phase_diff_wrapped(const std::vector<cf32>& iq) {
     std::vector<float> angle_diff(iq.size(), 0);
 
-    for (auto [e, elt] : std::views::enumerate(iq))
-    {
-        if (e == 0)
-        {
+    for (auto [e, elt] : std::views::enumerate(iq)) {
+        if (e == 0) {
             continue;
         }
         float diff = std::arg(iq[e]) - std::arg(iq[e - 1]);
-        if (diff < -PI)
-        {
+        if (diff < -PI) {
             diff += PI;
         }
-        if (diff > PI)
-        {
+        if (diff > PI) {
             diff -= PI;
         }
         // printf("%+3.2f - %+3.2f = %+2.2f \n",  std::arg(iq[e]) * RAD2DEG,
@@ -426,18 +400,15 @@ std::vector<float> phase_diff_wrapped(const std::vector<cf32> &iq)
     return angle_diff;
 }
 
-std::vector<std::vector<float> > section_vec(const std::vector<float> &x,
-                                             size_t section)
-{
+std::vector<std::vector<float>> section_vec(const std::vector<float>& x,
+                                            size_t section) {
     int samp_per_section = x.size() / section;
-    std::vector<std::vector<float> > out(section,
-                                         std::vector<float>(samp_per_section));
+    std::vector<std::vector<float>> out(section,
+                                        std::vector<float>(samp_per_section));
 
     int cntr = 0;
-    for (auto &row : out)
-    {
-        for (int i = 0; i < samp_per_section; i++)
-        {
+    for (auto& row : out) {
+        for (int i = 0; i < samp_per_section; i++) {
             row[i] = x[cntr];
             cntr += 1;
         }
@@ -446,9 +417,8 @@ std::vector<std::vector<float> > section_vec(const std::vector<float> &x,
     return out;
 }
 
-std::vector<float> conv(const std::vector<float> &x,
-                        const std::vector<float> &h)
-{
+std::vector<float> conv(const std::vector<float>& x,
+                        const std::vector<float>& h) {
     /*
      * Hand-rolling a convolution function because why not add the worry of not
      * doing this section correctly too.
@@ -487,18 +457,15 @@ std::vector<float> conv(const std::vector<float> &x,
     std::vector<float> y(N, 0);
 
     // zero pad h into h_pad
-    for (size_t i = N; i < N + M; i++)
-    {
+    for (size_t i = N; i < N + M; i++) {
         h_pad[i] = h[i - N];
     }
 
     std::reverse(h_pad.begin(), h_pad.end()); // reverse second arr before conv
 
-    for (size_t j = 0; j < N; j++)
-    {
+    for (size_t j = 0; j < N; j++) {
         int start = h_pad_size - N - j;
-        for (size_t k = 0; k < N; k++)
-        {
+        for (size_t k = 0; k < N; k++) {
             y[j] += x[k] * h_pad[start + k];
         }
     }

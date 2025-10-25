@@ -1,0 +1,18 @@
+---
+# based on LLVM style (or whichever you prefer)
+BasedOnStyle: LLVM
+
+Language: Cpp
+Standard: Cpp11
+
+# Avoid spaces inside angle brackets in templates
+SpacesInAngles: Never
+
+# (Optional) If your clang-format version supports the newer enum:
+# SpacesInAnglesStyle: Never
+
+# (other customizations of yours...)
+IndentWidth: 4
+PointerAlignment: Left
+# … etc …
+
