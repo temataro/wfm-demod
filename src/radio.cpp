@@ -38,19 +38,24 @@
 #include "wfm.h"
 
 void rtl_cb(unsigned char* buf, uint32_t len, void* ctx);
-void* run_radio(char** argv);
+void* run_radio(void* argv);
 
 bool SAVE_TO_DISK = 0;
 int main(int argc, char** argv) {
     (void)argc;
-    run_radio(argv);
+    void* radio_args = (void*) argv;
+    pthread_t radio_thread;
+
+    pthread_create(&radio_thread, NULL, run_radio, radio_args);
+    pthread_join(radio_thread, NULL);
 
     return 0;
 }
 
-void* run_radio(char** argv) {
+void* run_radio(void* argv) {
     rtlsdr_dev_t* dev = nullptr;
-    char* outfile = argv[1];
+    char** args = static_cast<char**>(argv);
+    char* outfile = args[1];
 
     if (strcmp(outfile, "") == 0) {
         ERR_PRINT("Input file not provided. Defaulting output to out.iq");
