@@ -5,7 +5,7 @@ OPTS=-march=native -ffast-math -O2
 
 .PHONY: all clean
 
-all: main
+all: radio
 
 %: %.cpp
 	clang++ $(CXXFLAGS) -std=$(CPPSTD) $< -o $@ $(LIBS) $(OPTS)
