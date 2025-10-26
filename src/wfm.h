@@ -56,6 +56,7 @@ typedef struct {
     uint64_t fs;
     int g;
     void* argvs;
+    rtlsdr_dev_t* dev;
 } radio_params_t;
 
 void read_to_vec(unsigned char* buf, uint32_t len, std::vector<cf32>& iq);

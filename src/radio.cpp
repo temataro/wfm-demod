@@ -64,6 +64,7 @@ int main(int argc, char** argv) {
 
     pthread_create(&radio_thread, NULL, run_radio, (void*)&radio_params);
     pthread_create(&control_thread, NULL, control_radio, (void*)&radio_params);
+
     pthread_join(radio_thread, NULL);
     pthread_join(control_thread, NULL);
 
@@ -72,11 +73,20 @@ int main(int argc, char** argv) {
 
 void* control_radio(void* args) {
     //
+    radio_params_t* radio_params = (radio_params_t*)(args);
+    int i=0;
     for (;;) {
         // Just retune every 4 seconds for now
         sleep(4);
-        fprintf(stderr, "Finished a sleep. :) \n");
+        pthread_mutex_lock(&lock);
+        pending_retune = i % 2;
+        uint64_t fc = rand() % 2 ? 100'500'000 : 106'000'000;
+
+        fprintf(stderr, "Attempting to retune to %lu\n", fc);
         fflush(stderr);
+        radio_params->fc = fc;
+        pthread_mutex_unlock(&lock);
+        i++;
     }
 }
 
@@ -105,6 +115,7 @@ void* run_radio(void* args) {
             r, manufact, product, serial);
 
     r = rtlsdr_open(&dev, device_index);
+    radio_params->dev = dev;
     if (r < 0) {
         ERR_PRINT("Failed to open RTL-SDR device #%d", device_index);
         return nullptr;
@@ -158,10 +169,28 @@ void* run_radio(void* args) {
     );
     sdr_ctx.s = s;
 
-    rtlsdr_read_async(dev, rtl_cb, &sdr_ctx,
-                      0,        // buf_num
-                      READ_SIZE // buf_len
-    );
+    for (;;) {
+        if (pending_retune) {
+            rtlsdr_set_center_freq(dev, radio_params->fc);
+            rtlsdr_set_sample_rate(dev, radio_params->fs);
+            rtlsdr_set_tuner_gain_mode(dev, radio_params->g == 0 ? 0 : 1);
+            rtlsdr_set_tuner_gain(dev, radio_params->g);
+
+            printf("Retuning to fc=%ld\n", radio_params->fc);
+            fflush(stdout);
+
+            pthread_mutex_lock(&lock);
+            pending_retune = 0;
+            pthread_mutex_unlock(&lock);
+        } else {
+            printf("Staying at fc=%ld\n", radio_params->fc);
+            fflush(stdout);
+            rtlsdr_read_async(dev, rtl_cb, &sdr_ctx,
+                              0,        // buf_num
+                              READ_SIZE // buf_len
+            );
+        }
+    }
 
     pa_simple_drain(s, NULL);
     pa_simple_free(s);
@@ -232,7 +261,6 @@ void rtl_cb(unsigned char* buf, uint32_t len, void* ctx) {
                   samp_written);
     }
     sdr_ctx->sample_counter += samp_written;
-#endif
 
     // END OF CB  -- Cleanup and profiling
     clock_t time = clock();
@@ -246,6 +274,14 @@ void rtl_cb(unsigned char* buf, uint32_t len, void* ctx) {
 
     fprintf(stderr, "[STATUS] Took %.5f ns to process. Wrote %lu samples.\r",
             proc_time, sdr_ctx->sample_counter);
+#endif
+
+    // After we start running this we check if there is a pending
+    // retune requested from the control thread.
+    if (pending_retune)
+    {
+        rtlsdr_cancel_async(sdr_ctx->device);
+    }
 }
 /*
      NOTES:
