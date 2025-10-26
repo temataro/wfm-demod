@@ -49,7 +49,8 @@ int pending_retune = 1; // The atomic we want to secure with the mutex lock
  pthread_mutex_unlock(&lock);
 */
 
-bool SAVE_TO_DISK = 0;
+bool SAVE_TO_DISK = 1;
+int VERBOSITY = 0;
 int main(int argc, char** argv) {
     (void)argc;
 
@@ -74,7 +75,7 @@ int main(int argc, char** argv) {
 void* control_radio(void* args) {
     //
     radio_params_t* radio_params = (radio_params_t*)(args);
-    int i=0;
+    int i = 0;
     for (;;) {
         // Just retune every 4 seconds for now
         sleep(4);
@@ -248,38 +249,42 @@ void rtl_cb(unsigned char* buf, uint32_t len, void* ctx) {
     }
     /* *** --- *** */
 
-#if SAVE_TO_DISK
-    INFO_PRINT("Saving to disk.\n");
-    size_t samp_written = 0;
-    fwrite(buf, 1, len, sdr_ctx->fp);
-    save_interleaved_cf32(iq, "out.cf32");
-    save_floats(angle_diff, "angle_diffs.f32");
-    save_floats(angle_diff_lpf, "angle_diff_lpf.f32");
+    if (SAVE_TO_DISK) {
+        size_t samp_written = 0;
+        samp_written = fwrite(buf, 1, len, sdr_ctx->fp);
+        save_interleaved_cf32(iq, "out.cf32");
+        save_floats(angle_diff, "angle_diffs.f32");
+        save_floats(angle_diff_lpf, "angle_diff_lpf.f32");
 
-    if (samp_written < len) {
-        ERR_PRINT("Expected to write %u samples but only wrote %zu!", len,
-                  samp_written);
-    }
-    sdr_ctx->sample_counter += samp_written;
-
-    // END OF CB  -- Cleanup and profiling
-    clock_t time = clock();
-    double proc_time = (time - sdr_ctx->init_time) * 1e9 / CLOCKS_PER_SEC;
-    sdr_ctx->init_time = time;
-
-    fprintf(sdr_ctx->benchmark_fp, "%.5f\n", proc_time);
-    fflush(sdr_ctx->benchmark_fp); // Otherwise we won't see anything printed
-                                   // when we Ctrl-C out of this program on
-                                   // termination.
-
-    fprintf(stderr, "[STATUS] Took %.5f ns to process. Wrote %lu samples.\r",
-            proc_time, sdr_ctx->sample_counter);
+#if (VERBOSITY == 2)
+        INFO_PRINT("Saving to disk.\r");
+        if (samp_written < len) {
+            ERR_PRINT("Expected to write %u samples but only wrote %zu!", len,
+                      samp_written);
+        }
 #endif
+        sdr_ctx->sample_counter += samp_written;
+
+#if (VERBOSITY == 2)
+        // END OF CB  -- Cleanup and profiling
+        clock_t time = clock();
+        double proc_time = (time - sdr_ctx->init_time) * 1e9 / CLOCKS_PER_SEC;
+        sdr_ctx->init_time = time;
+
+        fprintf(sdr_ctx->benchmark_fp, "%.5f\n", proc_time);
+        fflush(sdr_ctx->benchmark_fp); // Otherwise we won't see anything
+                                       // printed when we Ctrl-C out of this
+                                       // program on termination.
+
+        fprintf(stderr,
+                "[STATUS] Took %.5f ns to process. Wrote %lu samples.\r",
+                proc_time, sdr_ctx->sample_counter);
+#endif
+    }
 
     // After we start running this we check if there is a pending
     // retune requested from the control thread.
-    if (pending_retune)
-    {
+    if (pending_retune) {
         rtlsdr_cancel_async(sdr_ctx->device);
     }
 }
