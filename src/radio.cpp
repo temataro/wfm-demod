@@ -42,7 +42,7 @@ void* run_radio(void* args);
 void* control_radio(void* args);
 
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
-int pending_retune = 1; // The atomic we want to secure with the mutex lock
+int pending_retune = 0; // The atomic we want to secure with the mutex lock
 /*
  pthread_mutex_lock(&lock);
  // Operate on pending_retune inside.
@@ -80,12 +80,15 @@ void* control_radio(void* args) {
         // Just retune every 4 seconds for now
         sleep(4);
         pthread_mutex_lock(&lock);
-        pending_retune = i % 2;
-        uint64_t fc = rand() % 2 ? 100'500'000 : 106'000'000;
+        pending_retune = 0;
 
-        fprintf(stderr, "Attempting to retune to %lu\n", fc);
-        fflush(stderr);
-        radio_params->fc = fc;
+        if (pending_retune) {
+            uint64_t fc = rand() % 2 ? 100'500'000 : 106'000'000;
+            INFO_PRINT("Attempting to retune to %lu\n", fc);
+            fflush(stderr);
+            radio_params->fc = fc;
+        }
+
         pthread_mutex_unlock(&lock);
         i++;
     }
@@ -184,7 +187,7 @@ void* run_radio(void* args) {
             pending_retune = 0;
             pthread_mutex_unlock(&lock);
         } else {
-            printf("Staying at fc=%ld\n", radio_params->fc);
+            INFO_PRINT("fc=%ld\r", radio_params->fc);
             fflush(stdout);
             rtlsdr_read_async(dev, rtl_cb, &sdr_ctx,
                               0,        // buf_num
