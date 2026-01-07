@@ -1,0 +1,3 @@
+* Expand to SSB demodulation
+(Just replace the WFM demod stage with suppressed carrier AM demod,
+patch it into the PA audio)
