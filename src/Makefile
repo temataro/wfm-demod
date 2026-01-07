@@ -1,14 +1,22 @@
-CXXFLAGS=-Wall -Wextra
-CPPSTD=c++23
-LIBS=-lrtlsdr -lm -lpulse-simple -lpulse
-OPTS=-march=native -ffast-math -O2
+# ---- Project settings ----
+MOCS       = $(patsubst %.h, moc_%.cpp, $(filter %.h,$(HEADERS)))
+HEADERS    = mainwindow.h
+# ---- QT Stuff ----
+QT_CFLAGS := $(shell pkg-config --cflags Qt6Widgets)
+QT_LIBS   := -lQt6Widgets -lQt6Gui -lQt6Core
+MOC       := moc
+
+CPPSTD   =c++23
+CXXFLAGS =-Wall -Wextra -std=$(CPPSTD)
+LIBS     =-lrtlsdr -lm -lpulse-simple -lpulse $(QT_CFLAGS)
+OPTS     =-march=native -ffast-math -O2
 
 .PHONY: all clean
 
 all: radio
 
 %: %.cpp
-	clang++ $(CXXFLAGS) -std=$(CPPSTD) $< -o $@ $(LIBS) $(OPTS)
+	clang++ $(CXXFLAGS) $< -o $@ $(LIBS) $(OPTS) $(QT_LIBS)
 	./$@ out.iq
 
 inspect:
